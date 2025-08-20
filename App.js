@@ -1,18 +1,31 @@
+// App.js
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { TouchableOpacity } from 'react-native'; 
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-import HomeScreen from './screens/HomeScreen';
-import DiaryScreen from './screens/DiaryScreen';
-import ConsultScreen from './screens/Chat';
-import ProfileScreen from './screens/ProfileScreen';
-import ActivityScreen from './screens/ActivityScreen';
-import LoginScreen from './screens/LoginScreen';
-import SignUpScreen from './screens/SignUpScreen';
-import DiaryLibraryScreen from './screens/DiaryLibraryScreen';
-import MiniGameScreen from './screens/MiniGameScreen'; 
+import HomeScreen from './screens/HomeScreen'; //หน้าแรก
+import DiaryScreen from './screens/DiaryScreen';//ไดอารี่
+import ConsultScreen from './screens/App';//แชทบอทให้คำปรึกษา
+import ProfileScreen from './screens/ProfileScreen';//โปรไฟล์ผู้ใช้
+import ActivityScreen from './screens/ActivityScreen';//กิจกรรมต่างๆ
+import LoginScreen from './screens/LoginScreen';//หน้าล็อกอิน
+import SignUpScreen from './screens/SignUpScreen';//หน้าสมัครสมาชิค
+import MentalHealthSurveyScreen from './screens/MentalHealthSurveyScreen';//แบบสอบถามสุขภาพ
+import MiniGameScreen from './screens/MiniGameScreen'; // 🔥 นำเข้า MiniGame
+import DiaryLibraryScreen from'./screens/DiaryLibraryScreen';//คลังไดอารี่
+import DoctorRecommendScreen from './screens/DoctorRecommendScreen';//รายชื่อจิตแพทย์ที่แนะนำ
+import DoctorDetailScreen from './screens/DoctorDetailScreen';//รายละเอียดแพทย์ + ปุ่มนัดหมาย
+import BookAppointmentScreen from './screens/BookAppointmentScreen';
+import AppointmentSummaryScreen from './screens/AppointmentSummaryScreen';
+import PaymentScreen from './screens/PaymentScreen';
+import UpcomingAppointmentsScreen from './screens/UpcomingAppointmentsScreen';
+import PastAppointmentsScreen from './screens/PastAppointmentsScreen';
+
+//เอาออก//
+import AddDoctorsScreen from './screens/AddDoctorsScreen';
 
 
 const Tab = createBottomTabNavigator();
@@ -30,6 +43,7 @@ function MainTabs() {
           else if (route.name === 'ปรึกษา') iconName = 'chatbubbles-outline';
           else if (route.name === 'โปรไฟล์') iconName = 'person-outline';
           else if (route.name === 'กิจกรรม') iconName = 'fitness-outline';
+          
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: 'dodgerblue',
@@ -50,6 +64,7 @@ function MainTabs() {
         headerTintColor: 'white',
         headerTitleStyle: { fontWeight: 'bold' },
       }} />
+      
       <Tab.Screen name="กิจกรรม" component={ActivityScreen} options={{
         headerShown: true,
         title: 'กิจกรรม',
@@ -58,7 +73,9 @@ function MainTabs() {
         headerTitleAlign: 'center',
       }} />
       <Tab.Screen name="ปรึกษา" component={ConsultScreen} />
+       
       <Tab.Screen name="โปรไฟล์" component={ProfileScreen} />
+      
     </Tab.Navigator>
   );
 }
@@ -71,10 +88,118 @@ export default function App() {
         <Stack.Screen name="Login" component={LoginScreen} />
         {/* หน้า Signup */}
         <Stack.Screen name="SignUp" component={SignUpScreen} />
+        {/* แบบสอบถามสุขภาพจิตก่อนเข้าหน้าแรก */}
+        <Stack.Screen name="MentalSurvey" component={MentalHealthSurveyScreen} />
         {/* หน้าแอปหลักแบบ Tab */}
         <Stack.Screen name="MainTabs" component={MainTabs} />
         <Stack.Screen name="DiaryLibrary" component={DiaryLibraryScreen} />
-        <Stack.Screen name="MiniGame" component={MiniGameScreen} />
+       <Stack.Screen
+          name="UpcomingAppointments"
+          component={UpcomingAppointmentsScreen}
+          options={({ navigation }) => ({
+            headerShown: true,
+            title: 'นัดหมายในอนาคต',
+            headerStyle: { backgroundColor: 'pink' },
+            headerTintColor: '#fff',
+
+            // ✅ ปุ่มไอคอน Home
+            headerRight: () => (
+              <TouchableOpacity onPress={() => navigation.navigate('MainTabs', { screen: 'หน้าแรก' })}>
+                <Ionicons name="home-outline" size={26} color="#fff" />
+              </TouchableOpacity>
+            ),
+          })}
+        />
+        <Stack.Screen
+          name="PastAppointments"
+          component={PastAppointmentsScreen}
+          options={{
+            headerShown: true,
+            title: 'นัดหมายที่ผ่านมา',
+            headerStyle: { backgroundColor: 'pink' },
+            headerTintColor: '#fff',
+            headerTitleAlign: 'center',
+          }}
+        /> 
+        <Stack.Screen
+        name="AppointmentSummary"
+        component={AppointmentSummaryScreen}
+        options={{
+          headerShown: true,                   // ✅ เปิด header
+          title: 'สรุปการนัดหมาย',
+          headerStyle: { backgroundColor: 'pink' },
+          headerTintColor: '#fff',
+          headerTitleAlign: 'center',
+        }}
+      />
+        <Stack.Screen
+        name="BookAppointment"
+        component={BookAppointmentScreen}
+        options={{
+          headerShown: true,
+          title: 'เลือกวันเวลา',
+          headerStyle: { backgroundColor: 'pink' },
+          headerTintColor: '#fff',
+          headerTitleAlign: 'center',
+        }}
+      />
+        <Stack.Screen
+          name="Payment"
+          component={PaymentScreen}
+          options={{
+            headerShown: true,
+            title: 'ชำระเงิน',
+            headerStyle: { backgroundColor: 'pink' },
+            headerTintColor: '#fff',
+            headerTitleAlign: 'center',
+          }}
+        />
+
+        <Stack.Screen
+          name="MiniGame"component={MiniGameScreen}
+          options={{
+            headerShown: true,
+            title: 'มินิเกมเลี้ยงสัตว์',
+            headerStyle: { backgroundColor: 'pink' },
+            headerTintColor: '#fff',
+            headerTitleAlign: 'center',
+            
+          }}
+        />
+        <Stack.Screen
+          name="DoctorDetail"
+          component={DoctorDetailScreen}
+          options={{
+            headerShown: true,
+            title: 'รายละเอียดแพทย์',
+            headerStyle: { backgroundColor: 'pink' },
+            headerTintColor: '#fff',
+          }}
+        />
+        {/* ✅ หน้าที่เพิ่มเข้ามา */}
+        <Stack.Screen
+          name="DoctorRecommend"
+          component={DoctorRecommendScreen}
+          options={{
+            headerShown: true,
+            title: 'แนะนำจิตแพทย์',
+            headerStyle: { backgroundColor: 'pink' },
+            headerTintColor: '#fff',
+            headerTitleAlign: 'center',
+          }}
+        />
+         {/* เอาออก */}
+         <Stack.Screen
+            name="AddDoctors"
+            component={AddDoctorsScreen}
+            options={{
+              headerShown: true,
+              title: 'เพิ่มแพทย์',
+              headerStyle: { backgroundColor: 'pink' },
+              headerTintColor: '#fff',
+              headerTitleAlign: 'center',
+            }}
+          />
       </Stack.Navigator>
     </NavigationContainer>
   );
