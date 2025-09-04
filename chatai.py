@@ -47,8 +47,15 @@ def chat_endpoint():
     if not user_input:
         return jsonify({"error": "ไม่มีข้อความที่ส่งมา"}), 400
 
-    response = chat.send_message(user_input)
-    return jsonify({"reply": response.text})
+    try:
+        response = chat.send_message(user_input)
+        reply = response.text if hasattr(response, "text") else str(response)
+    except Exception as e:
+        print("Error in chat:", e)
+        reply = "ขอโทษ ฉันตอบไม่ได้ตอนนี้ ลองใหม่อีกครั้ง"
+
+    return jsonify({"reply": reply})
+
 
 # 📌 Endpoint สำหรับ Diary
 @app.route("/diary", methods=["POST"])
@@ -58,6 +65,22 @@ def diary_endpoint():
     if not user_input:
         return jsonify({"error": "ไม่มีข้อความที่ส่งมา"}), 400
 
+    # 🔹 ตรวจสอบ keyword สำหรับความเสี่ยงสูงก่อน
+    high_risk_keywords = ["อยากตาย", "ฆ่า", "ไม่อยากอยู่", "หมดหวัง", "เจ็บปวด", "ทำร้ายตัวเอง"]
+    if any(word in user_input for word in high_risk_keywords):
+        risk_level = "เสี่ยงสูง"
+    else:
+        # 🔹 Prompt ให้ AI ประเมินความเสี่ยง
+        risk_prompt = f"""
+        ข้อความ: "{user_input}"
+
+        ประเมินความเสี่ยงด้านสุขภาพจิตรุนแรงของข้อความนี้
+        ตอบเพียงคำเดียว: "เสี่ยงสูง", "เสี่ยงต่ำ" หรือ "ปกติ"
+        """
+        risk_response = analyze_model.generate_content(risk_prompt)
+        risk_level = risk_response.text.strip()
+
+    # 🔹 Prompt แยกสำหรับวิเคราะห์อารมณ์ปกติ
     emotion_prompt = f"""
     ข้อความจากบันทึก: "{user_input}"
 
@@ -65,9 +88,14 @@ def diary_endpoint():
     เลือกจาก: ดีใจ, เศร้า, กังวล, โกรธ, เหนื่อย, ผ่อนคลาย, มีกำลังใจ
     ห้ามตอบเกิน 1 คำ
     """
+    emotion_response = analyze_model.generate_content(emotion_prompt)
+    emotion = emotion_response.text.strip()
 
-    response = analyze_model.generate_content(emotion_prompt)
-    return jsonify({"emotion": response.text.strip()})
+    return jsonify({
+        "risk": risk_level,      # สำหรับ DiaryScreen.js แสดงแจ้งเตือน
+        "emotion": emotion       # สำหรับ DiaryLibraryScreen.js สรุปอารมณ์
+    })
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
