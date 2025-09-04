@@ -1,94 +1,88 @@
-import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, Button } from 'react-native';
+import React, { useState } from "react";
+import { View, Text, ActivityIndicator, ScrollView, Alert, Button } from "react-native";
+import axios from "axios";
 
-export default function DiaryLibraryScreen({ route, navigation }) {
+export default function DiaryLibraryScreen({ route }) {
   const { diaryEntries } = route.params || {};
-  const entries = diaryEntries
-    ? Object.entries(diaryEntries).sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    : [];
+  const [analysisResults, setAnalysisResults] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState(null);
 
-  // ✅ รายการคำต้องห้าม (เพิ่มหรือลดได้ตามต้องการ)
-  const forbiddenWords = ['s', 'ฆ่า', 'ตาย', 'เศร้า', 'เสียใจ', 'อยากตาย'];
-
-  const onEntryPress = (date, text = '') => {
-    // เคลียร์ข้อความ: แปลงเป็นพิมพ์เล็ก + ลบเครื่องหมายพิเศษ
-    const cleanedText = text.toLowerCase().replace(/[^\w\sก-๙]/gi, '');
-
-    // ตรวจว่ามีคำต้องห้ามไหม
-    const found = forbiddenWords.find(word =>
-      cleanedText.includes(word.toLowerCase())
-    );
-
-    if (found) {
-      Alert.alert(
-        'คำเตือน 🚫',
-        `พบคำต้องห้าม "${found}" ในไดอารี่นี้\nโปรดตรวจสอบเนื้อหาอีกครั้ง`,
-        [{ text: 'ปิด' }]
-      );
-    } else {
-      Alert.alert(
-        `ไดอารี่วันที่ ${date}`,
-        text || 'ไม่มีข้อความบันทึก',
-        [{ text: 'ปิด' }]
-      );
+  // ฟังก์ชันวิเคราะห์ทุกบันทึก
+  const analyzeAllEntries = async () => {
+    if (!diaryEntries || Object.keys(diaryEntries).length === 0) {
+      Alert.alert("ไม่มีบันทึก", "คุณยังไม่ได้บันทึกไดอารี่เลย");
+      return;
     }
-  };
 
-  const renderItem = ({ item }) => {
-    const [date, text] = item;
-    const preview = text.length > 30 ? text.substring(0, 30) + '...' : text;
-    return (
-      <TouchableOpacity style={styles.entryItem} onPress={() => onEntryPress(date, text)}>
-        <Text style={styles.entryDate}>{date}</Text>
-        <Text style={styles.entryPreview}>{preview}</Text>
-      </TouchableOpacity>
-    );
+    setLoading(true);
+    let results = {};
+    let count = { pos: 0, neg: 0, neu: 0 };
+
+    for (const [date, text] of Object.entries(diaryEntries)) {
+      try {
+        const res = await axios.post("http://10.1.105.202:5000/diary", { message: text });
+        const sentiment = res.data.emotion; // 👈 ได้ผลลัพธ์จาก Flask + Gemini
+
+        results[date] = { text, sentiment };
+
+        // ✅ นับภาพรวม
+        if (sentiment.includes("ดีใจ") || sentiment.includes("บวก")) count.pos++;
+        else if (sentiment.includes("เศร้า") || sentiment.includes("กังวล") || sentiment.includes("ลบ")) count.neg++;
+        else count.neu++;
+      } catch (err) {
+        console.error("Error analyzing:", err);
+        results[date] = { text, sentiment: "วิเคราะห์ไม่ได้" };
+      }
+    }
+
+    setAnalysisResults(results);
+    setLoading(false);
+    setSummary(count);
+    Alert.alert("เสร็จสิ้น", "วิเคราะห์อารมณ์ของทุกบันทึกเรียบร้อยแล้ว ✅");
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>📔 คลังไดอารี่</Text>
-      {entries.length === 0 ? (
-        <Text style={{ textAlign: 'center', marginTop: 20 }}>ยังไม่มีบันทึกเก่า</Text>
-      ) : (
-        <FlatList
-          data={entries}
-          keyExtractor={(item) => item[0]}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 20 }}
-        />
-      )}
+    <View style={{ flex: 1, padding: 20 }}>
+      <Button
+        title="วิเคราะห์อารมณ์ทั้งหมด"
+        onPress={analyzeAllEntries}
+        color="dodgerblue"
+      />
 
-      <View style={{ marginTop: 10 }}>
-        <Button title="กลับ" onPress={() => navigation.goBack()} color="tomato" />
-      </View>
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color="#0000ff" />
+          <Text>กำลังวิเคราะห์อารมณ์ทั้งหมด...</Text>
+        </View>
+      ) : (
+        <ScrollView style={{ marginTop: 20 }}>
+          {/* ✅ แสดงภาพรวม */}
+          {summary && (
+            <View style={{ marginBottom: 20, padding: 15, backgroundColor: "#f0f8ff", borderRadius: 10 }}>
+              <Text style={{ fontWeight: "bold", fontSize: 16 }}>📊 ภาพรวมอารมณ์</Text>
+              <Text>😊 บวก: {summary.pos} วัน</Text>
+              <Text>😐 เฉยๆ: {summary.neu} วัน</Text>
+              <Text>😢 ลบ: {summary.neg} วัน</Text>
+            </View>
+          )}
+
+          {Object.entries(analysisResults).map(([date, { text, sentiment }]) => (
+            <View
+              key={date}
+              style={{
+                padding: 10,
+                borderBottomWidth: 1,
+                borderBottomColor: "#ccc",
+              }}
+            >
+              <Text style={{ fontWeight: "bold" }}>📅 {date}</Text>
+              <Text>✏ {text}</Text>
+              <Text>😊 อารมณ์: {sentiment}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 15,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 15,
-  },
-  entryItem: {
-    padding: 12,
-    borderBottomColor: '#ccc',
-    borderBottomWidth: 1,
-  },
-  entryDate: {
-    fontWeight: '700',
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  entryPreview: {
-    color: '#555',
-    fontSize: 14,
-  },
-});
