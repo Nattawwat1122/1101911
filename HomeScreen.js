@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import moment from 'moment';
 import 'moment/locale/th';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 moment.locale('th');
 
@@ -41,7 +42,33 @@ export default function HomeScreen() {
     return startOfWeek.clone().add(index, 'days').format('YYYY-MM-DD');
   };
 
-  // แก้ไข fetchMoodData ให้บันทึก weeklyAvg ลง Firestore ด้วย
+  // --- รีเซ็ตทุก 7 โมง ---
+  useEffect(() => {
+    const resetDailyCheck = async () => {
+      const lastReset = await AsyncStorage.getItem('lastReset');
+      const now = moment();
+      const todayResetTime = moment().hour(7).minute(0).second(0); // 7 โมงวันนี้
+
+      if (!lastReset || moment(lastReset).isBefore(todayResetTime)) {
+        // รีเซ็ต moodData ของวันนี้
+        const newData = [...moodData];
+        newData[todayIndex] = {
+          ...newData[todayIndex],
+          mood: 0,
+          note: '',
+          timestamp: null,
+        };
+        setMoodData(newData);
+
+        // เก็บเวลาที่รีเซ็ตล่าสุด
+        await AsyncStorage.setItem('lastReset', now.toISOString());
+      }
+    };
+
+    resetDailyCheck();
+  }, []);
+
+  // --- โหลดข้อมูลประจำสัปดาห์ ---
   const fetchMoodData = async () => {
     const user = auth.currentUser;
     if (!user) return;
@@ -85,9 +112,9 @@ export default function HomeScreen() {
     const avg = moodCount > 0 ? (totalMood / moodCount).toFixed(2) : null;
     setWeeklyAvg(avg);
 
-    // --- เพิ่มบันทึกค่า weeklyAvg ลง Firestore ---
+    // --- เซฟ avg ลง Firestore ---
     if (avg !== null) {
-      const yearWeek = startOfWeek.format('YYYY-[W]WW'); // เช่น 2025-W32
+      const yearWeek = startOfWeek.format('YYYY-[W]WW');
       const weeklyAvgRef = doc(db, 'moods', user.uid, 'weeklyAvg', yearWeek);
       await setDoc(weeklyAvgRef, {
         yearWeek,
@@ -95,7 +122,6 @@ export default function HomeScreen() {
         updatedAt: new Date().toISOString(),
       });
     }
-    // --- จบเพิ่ม ---
 
     const todayMood = newMoodData[todayIndex];
     if (!todayMood.timestamp) {
@@ -122,6 +148,7 @@ export default function HomeScreen() {
     fetchMonthlyData();
   }, []);
 
+  // --- อัพเดต avg แบบเรียลไทม์ ---
   const selectMoodForHistory = async (mood) => {
     if (selectedHistoryIndex !== null) {
       const user = auth.currentUser;
@@ -160,11 +187,38 @@ export default function HomeScreen() {
         });
       }
 
+      // อัพเดต state ท้องถิ่น
       const newData = [...moodData];
       newData[selectedHistoryIndex].mood = mood;
       newData[selectedHistoryIndex].note = note;
       newData[selectedHistoryIndex].timestamp = timestamp;
       setMoodData(newData);
+
+      // --- คำนวณ avg ใหม่ ---
+      let totalMood = 0;
+      let moodCount = 0;
+      newData.forEach(item => {
+        if (item.timestamp) {
+          totalMood += item.mood;
+          moodCount += 1;
+        }
+      });
+
+      const newAvg = moodCount > 0 ? (totalMood / moodCount).toFixed(2) : null;
+      setWeeklyAvg(newAvg);
+
+      // เซฟ avg ใหม่ลง Firestore
+      if (newAvg !== null) {
+        const startOfWeek = moment().startOf('isoWeek');
+        const yearWeek = startOfWeek.format('YYYY-[W]WW');
+        const weeklyAvgRef = doc(db, 'moods', user.uid, 'weeklyAvg', yearWeek);
+        await setDoc(weeklyAvgRef, {
+          yearWeek,
+          avg: Number(newAvg),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
       setMoodModalVisible(false);
       setSelectedHistoryIndex(null);
       setNote('');

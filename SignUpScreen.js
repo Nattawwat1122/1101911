@@ -12,7 +12,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '../firebase'; // แก้ path ให้ตรงกับโปรเจกต์ของคุณ
+import { auth, db } from '../firebase'; // 🔥 แก้ path ให้ตรงกับโปรเจกต์ของคุณ
 import { doc, setDoc } from 'firebase/firestore';
 
 const provinces = [
@@ -31,7 +31,8 @@ const provinces = [
 export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [userID, setUserID] = useState('');
+  const [username, setUsername] = useState(''); // ใช้แทน userID
+  const [gender, setGender] = useState('ชาย'); // ค่าเริ่มต้น
   const [province, setProvince] = useState(provinces[0]);
   const [birthdate, setBirthdate] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -42,8 +43,8 @@ export default function SignUpScreen({ navigation }) {
   };
 
   const handleSignUp = async () => {
-    if (!userID.trim() || !email.trim() || !password) {
-      Alert.alert('กรุณากรอก UserID, อีเมล และรหัสผ่าน');
+    if (!username.trim() || !email.trim() || !password) {
+      Alert.alert('กรุณากรอก Username, อีเมล และรหัสผ่าน');
       return;
     }
 
@@ -56,12 +57,15 @@ export default function SignUpScreen({ navigation }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const user = userCredential.user;
 
-      // 🔥 บันทึกข้อมูลผู้ใช้พร้อม userID ที่ผู้ใช้กรอกเอง
+      // 🔥 บันทึกข้อมูลผู้ใช้ไป Firestore
       await setDoc(doc(db, 'users', user.uid), {
-        userID: userID.trim(),
+        username: username.trim(),
         email: email.trim(),
-        province,
+        gender,
         birthdate: birthdate.toISOString().split('T')[0], // YYYY-MM-DD
+        province,
+        totalScore: 0, // ค่าเริ่มต้น
+        level: 1, // ค่าเริ่มต้น
       });
 
       Alert.alert('สมัครสมาชิกสำเร็จ');
@@ -82,10 +86,10 @@ export default function SignUpScreen({ navigation }) {
       <Text style={styles.header}>สมัครสมาชิก</Text>
 
       <TextInput
-        placeholder="UserID"
+        placeholder="Username"
         style={styles.input}
-        value={userID}
-        onChangeText={setUserID}
+        value={username}
+        onChangeText={setUsername}
       />
 
       <TextInput
@@ -104,6 +108,19 @@ export default function SignUpScreen({ navigation }) {
         onChangeText={setPassword}
         secureTextEntry
       />
+
+      <Text style={styles.label}>เพศ</Text>
+      <View style={styles.pickerContainer}>
+        <Picker
+          selectedValue={gender}
+          onValueChange={(itemValue) => setGender(itemValue)}
+          style={{ width: '100%' }}
+        >
+          <Picker.Item label="ชาย" value="ชาย" />
+          <Picker.Item label="หญิง" value="หญิง" />
+          <Picker.Item label="อื่นๆ" value="อื่นๆ" />
+        </Picker>
+      </View>
 
       <Text style={styles.label}>จังหวัด</Text>
       <View style={styles.pickerContainer}>

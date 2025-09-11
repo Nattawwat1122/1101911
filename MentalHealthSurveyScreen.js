@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, Button } from 'react-native';
 import { RadioButton } from 'react-native-paper';
-import { auth, db } from '../firebase';
+import { auth, db } from '../firebase'; // เช็คว่า firebase config ถูกต้อง
 import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
 
 const questions = [
@@ -19,7 +19,6 @@ const choices = [
   { label: 'เกือบทุกวัน', value: 3 },
 ];
 
-// ✅ ฟังก์ชันแปลงระดับเป็นข้อความ
 const getLevelDescription = (level) => {
   switch (level) {
     case 0:
@@ -109,7 +108,7 @@ export default function MentalHealthSurveyScreen({ navigation }) {
         level,
         levelDescription,
         answers,
-        createdAt: new Date().toISOString(), // ถ้าไม่ต้องการ timestamp ให้ลบออก
+        createdAt: new Date().toISOString(),
       };
 
       await addDoc(collection(db, 'mental_surveys'), payload);
