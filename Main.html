@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>แดชบอร์ดผู้ใช้แอปสุขภาพจิต</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f9fafb;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      color: #333;
+    }
+    .container { display: flex; flex-grow: 1; }
+    .sidebar {
+      width: 220px; background-color: #fff; display: flex; flex-direction: column;
+      justify-content: space-between; padding: 20px; box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+      height: 100vh; position: fixed; top: 0; left: 0; font-weight: 600; font-size: 14px;
+      letter-spacing: 0.02em;
+    }
+    .top-section { display: flex; flex-direction: column; gap: 18px; }
+    .nav-link {
+      padding: 12px; background-color: #f4f6f8; color: #555; text-decoration: none;
+      border-radius: 8px; transition: background-color 0.3s ease, color 0.3s ease; text-align: center;
+    }
+    .nav-link:hover { background-color: #3b82f6; color: #fff; }
+    .logout-btn {
+      padding: 14px 0; background-color: #ef4444; color: white; font-size: 16px;
+      border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.3s ease;
+      width: 100%; font-weight: 600; letter-spacing: 0.03em; position: sticky; bottom: 20px;
+    }
+    .logout-btn:hover { background-color: #b91c1c; }
+    .main-content {
+      margin-left: 220px; flex-grow: 1; padding: 32px 36px; overflow-y: auto;
+      min-height: 100vh; background-color: #fff; box-shadow: inset 0 0 12px rgba(0,0,0,0.03);
+    }
+    .dashboard-header { margin-bottom: 28px; font-weight: 700; font-size: 28px; color: #111827; }
+    .cards { display: flex; gap: 24px; margin-bottom: 36px; flex-wrap: wrap; }
+    .card {
+      background-color: #f3f4f6; padding: 24px; border-radius: 16px; flex: 1; min-width: 200px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07); text-align: center; transition: box-shadow 0.3s ease;
+    }
+    .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+    .card h2 { font-size: 42px; margin-bottom: 10px; color: #2563eb; font-weight: 700; }
+    .card p { font-size: 16px; color: #4b5563; font-weight: 600; }
+    .double-chart-container {
+      display: flex; flex-wrap: nowrap; margin-bottom: 50px; justify-content: center;
+      border: 2px solid #222; border-radius: 24px; background-color: #fff;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.07); padding: 32px 20px;
+    }
+    .chart-wrapper { flex: 1 1 50%; max-width: 50%; text-align: center; padding: 0 32px; }
+    .chart-wrapper:first-child { border-right: 2px solid #222; }
+    .chart-wrapper h3 {
+      color: #2563eb; margin-bottom: 22px; font-weight: 700; font-size: 24px;
+      border-bottom: 3px solid #2563eb; padding-bottom: 8px;
+    }
+    canvas { background-color: #fff !important; border-radius: 12px !important;
+      padding: 16px !important; height: 320px !important; }
+    .legend-container { display: flex; flex-direction: column; gap: 18px; font-size: 14px; color: #4b5563; font-weight: 600; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .legend-color-box { width: 16px; height: 16px; border-radius: 4px; }
+    .filter-btn {
+      margin-right: 8px; padding: 8px 16px; border-radius: 12px; border: 1.5px solid #2563eb;
+      background-color: transparent; color: #2563eb; font-weight: 600; cursor: pointer;
+    }
+    .filter-btn.active { background-color: #2563eb; color: #fff; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="sidebar">
+    <div class="top-section">
+      <a href="#" class="nav-link">ภาพรวม</a>
+      <a href="Report.html" class="nav-link">รายงาน</a>
+      <a href="manageContent.html" class="nav-link">จัดการเนื้อหา</a>
+      <a href="#" class="nav-link">ตั้งค่า</a>
+    </div>
+    <button class="logout-btn">ออกจากระบบ</button>
+  </div>
+
+  <div class="main-content">
+    <div class="dashboard-header">ภาพรวมผู้ใช้แอปสุขภาพจิต</div>
+
+    <div class="cards">
+      <div class="card"><h2 id="userCount">0</h2><p>ผู้ใช้ทั้งหมด</p></div>
+      <div class="card"><h2 id="onlineCount">0</h2><p>ออนไลน์</p></div>
+      <div class="card"><h2 id="offlineCount">0</h2><p>ออฟไลน์</p></div>
+    </div>
+
+    <div class="double-chart-container">
+      <div class="chart-wrapper">
+        <h3>สัดส่วนผู้ใช้ตามสถานะสุขภาพจิต</h3>
+        <canvas id="pieChart"></canvas>
+      </div>
+
+      <div class="chart-wrapper">
+        <h3>สัดส่วนผู้ใช้ตามช่วงอายุและเพศ</h3>
+        <div style="display:flex; flex-direction: row; align-items: center; justify-content: center;">
+          <canvas id="ageGenderBarChart" style="max-width: 400px;"></canvas>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-color-box" style="background:#2563eb;"></div> ชาย</div>
+            <div class="legend-item"><div class="legend-color-box" style="background:#ec4899;"></div> หญิง</div>
+            <div class="legend-item"><div class="legend-color-box" style="background:#6b7280;"></div> ไม่ระบุ</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="province-chart-container" style="margin-top: 48px; max-width: 850px;">
+      <h3>แนวโน้มผู้ใช้งานตามช่วงเวลา</h3>
+      <div style="text-align: center; margin-bottom: 16px;">
+        <button class="filter-btn active" data-period="week">สัปดาห์</button>
+        <button class="filter-btn" data-period="month">เดือน</button>
+        <button class="filter-btn" data-period="year">ปี</button>
+        <button class="filter-btn" data-period="all">ทั้งหมด</button>
+      </div>
+      <canvas id="lineUsageChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, getDocs, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyByrcAEkiXvFD5POwK-gh5vmRowTiCpYRI",
+    authDomain: "mental-health-project-39da8.firebaseapp.com",
+    projectId: "mental-health-project-39da8",
+    storageBucket: "mental-health-project-39da8.appspot.com",
+    messagingSenderId: "141911957949",
+    appId: "1:141911957949:web:becb3990f2ba553e16b2d4",
+    measurementId: "G-Z8352Q2PHF"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  function calculateAge(birthdateStr) {
+    const birth = new Date(birthdateStr);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age;
+  }
+
+  async function loadUserStats() {
+    try {
+      const querySnapshot = await getDocs(collection(db, "users"));
+      let totalUsers = 0, online = 0, offline = 0;
+
+      const ageGroups = ['15-24','25-34','35-44','45-54','55+','ไม่ระบุ'];
+      const maleCounts = [0,0,0,0,0,0];
+      const femaleCounts = [0,0,0,0,0,0];
+      const unspecifiedCounts = [0,0,0,0,0,0];
+
+      querySnapshot.forEach(doc => {
+        totalUsers++;
+        const data = doc.data();
+
+        if (data.status === 'online') online++;
+        else offline++;
+
+        const age = data.birthdate ? calculateAge(data.birthdate) : null;
+        const gender = (data.gender || '').trim();
+
+        let index = -1;
+        if (age !== null) {
+          if (age >= 15 && age <= 24) index = 0;
+          else if (age >= 25 && age <= 34) index = 1;
+          else if (age >= 35 && age <= 44) index = 2;
+          else if (age >= 45 && age <= 54) index = 3;
+          else if (age >= 55) index = 4;
+        }
+        if (index === -1) index = 5;
+
+        if (gender === 'ชาย' || gender.toLowerCase() === 'male') maleCounts[index]++;
+        else if (gender === 'หญิง' || gender.toLowerCase() === 'female') femaleCounts[index]++;
+        else unspecifiedCounts[index]++;
+      });
+
+      document.getElementById("userCount").innerText = totalUsers.toLocaleString();
+      document.getElementById("onlineCount").innerText = online.toLocaleString();
+      document.getElementById("offlineCount").innerText = offline.toLocaleString();
+
+      new Chart(document.getElementById('ageGenderBarChart'), {
+        type: 'bar',
+        data: {
+          labels: ageGroups,
+          datasets: [
+            { label: 'ชาย', data: maleCounts, backgroundColor: '#2563eb' },
+            { label: 'หญิง', data: femaleCounts, backgroundColor: '#ec4899' },
+            { label: 'ไม่ระบุ', data: unspecifiedCounts, backgroundColor: '#6b7280' }
+          ]
+        },
+        options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+      });
+
+      // pie chart mock data
+      const pieData = {
+        labels: ['ปกติ', 'เครียด', 'ซึมเศร้า', 'ภาวะวิกฤต'],
+        datasets: [{
+          data: [1000, 2500, 1300, 200],
+          backgroundColor: ['#4caf50','#f59e0b','#ef4444','#8b5cf6'],
+          hoverOffset: 30
+        }]
+      };
+      new Chart(document.getElementById('pieChart'), {
+        type: 'pie',
+        data: pieData,
+        options: { plugins: { legend: { position: 'bottom' } } }
+      });
+
+    } catch (error) {
+      console.error("Error loading user stats:", error);
+    }
+  }
+
+  loadUserStats();
+
+  // ----------------- แนวโน้มผู้ใช้งาน (lastActive) -----------------
+  let lineUsageChart = new Chart(document.getElementById('lineUsageChart'), {
+    type:'line',
+    data:{labels:[],datasets:[{label:'จำนวนผู้ใช้งาน',data:[],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,0.3)',fill:true,tension:0.3}]},
+    options:{responsive:true,scales:{y:{beginAtZero:true}}}
+  });
+
+  async function loadUsageTrends(period="week") {
+    const snapshot = await getDocs(collection(db,"users"));
+    const now = new Date();
+
+    let labels=[], counts=[];
+
+    if (period==="week") {
+      labels = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+      counts = new Array(7).fill(0);
+    } else if (period==="month") {
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+      labels = Array.from({length:daysInMonth},(_,i)=>i+1);
+      counts = new Array(daysInMonth).fill(0);
+    } else if (period==="year") {
+      labels = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+      counts = new Array(12).fill(0);
+    } else if (period==="all") {
+      labels = [];
+      counts = [];
+    }
+
+    snapshot.forEach(doc=>{
+      const data = doc.data();
+      if (data.lastActive) {
+        const d = data.lastActive instanceof Timestamp ? data.lastActive.toDate() : new Date(data.lastActive);
+
+        if (period==="week") {
+          const day = d.getDay();
+          counts[day]++;
+        }
+        else if (period==="month" && d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()) {
+          counts[d.getDate()-1]++;
+        }
+        else if (period==="year" && d.getFullYear()===now.getFullYear()) {
+          counts[d.getMonth()]++;
+        }
+        else if (period==="all") {
+          const year = d.getFullYear();
+          let idx = labels.indexOf(year);
+          if (idx===-1) {
+            labels.push(year);
+            counts.push(1);
+          } else {
+            counts[idx]++;
+          }
+        }
+      }
+    });
+
+    lineUsageChart.data.labels = labels;
+    lineUsageChart.data.datasets[0].data = counts;
+    lineUsageChart.update();
+  }
+
+  // เรียกครั้งแรก
+  loadUsageTrends("week");
+
+  document.querySelectorAll('.filter-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      loadUsageTrends(btn.getAttribute('data-period'));
+    });
+  });
+
+  if (!localStorage.getItem('loggedInUser')) window.location.href='Login.html';
+  document.querySelector('.logout-btn').addEventListener('click', ()=>{
+    localStorage.removeItem('loggedInUser');
+    window.location.href='Login.html';
+  });
+
+</script>
+
+</body>
+</html>

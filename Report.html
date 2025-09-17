@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>รายงานผู้ใช้ - Admin Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f4f6f8; display:flex; min-height:100vh; color:#333; }
+  .sidebar { width:220px; background:#fff; display:flex; flex-direction:column; justify-content:space-between; padding:20px; box-shadow:2px 0 8px rgba(0,0,0,0.05); height:100vh; position:fixed; top:0; left:0; font-weight:600; font-size:14px; }
+  .top-section { display:flex; flex-direction:column; gap:15px; }
+  .nav-link { padding:12px; background:#f4f6f8; color:#555; text-decoration:none; border-radius:8px; text-align:center; transition:0.3s; }
+  .nav-link:hover { background:#3b82f6; color:#fff; }
+  .nav-link.active { background:#2563eb; color:#fff; }
+  .logout-btn { padding:14px 0; background:#ef4444; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600; }
+  .logout-btn:hover { background:#b91c1c; }
+  .main-content { margin-left:220px; flex-grow:1; padding:32px 36px; }
+  header { font-size:28px; font-weight:700; margin-bottom:30px; color:#2563eb; text-align:center; }
+  .card { background:#fff; border-radius:16px; padding:25px; margin:25px auto; max-width:950px; box-shadow:0 6px 20px rgba(0,0,0,0.05); }
+  .card h2 { text-align:left; margin-bottom:15px; color:#2563eb; font-size:20px; border-bottom:2px solid #e5e7eb; padding-bottom:8px; }
+  table { width:100%; border-collapse:collapse; margin-top:15px; font-size:14px; }
+  th, td { padding:12px 16px; text-align:center; border-bottom:1px solid #e5e7eb; }
+  th { background:#f3f4f6; color:#2563eb; font-weight:600; }
+  tr:hover { background:#f1f5f9; }
+  canvas { margin-top:20px; }
+  .filter-buttons { margin-top:10px; display:flex; gap:10px; }
+  .filter-buttons button { padding:6px 12px; border:none; border-radius:6px; background:#3b82f6; color:white; cursor:pointer; transition:0.3s; }
+  .filter-buttons button.active { background:#2563eb; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="top-section">
+    <a href="Main.html" class="nav-link">ภาพรวม</a>
+    <a href="Report.html" class="nav-link active">รายงาน</a>
+    <a href="manageContent.html" class="nav-link">จัดการเนื้อหา</a>
+    <a href="#" class="nav-link">ตั้งค่า</a>
+  </div>
+  <button class="logout-btn">ออกจากระบบ</button>
+</div>
+
+<div class="main-content">
+  <header>รายงานผู้ใช้แอปสุขภาพจิต</header>
+
+  <!-- Top 10 คำ -->
+  <div class="card">
+    <h2>คำที่ผู้ใช้พิมพ์บ่อยที่สุด</h2>
+    <canvas id="wordChart"></canvas>
+    <table id="wordTable">
+      <thead>
+        <tr><th>คำ</th><th>จำนวนครั้ง</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- จังหวัดและเพศ -->
+  <div class="card">
+    <h2>จำนวนผู้ใช้ตามเพศและจังหวัด</h2>
+    <canvas id="provinceMap"></canvas>
+    <table id="provinceTable">
+      <thead>
+        <tr><th>จังหวัด</th><th>ชาย</th><th>หญิง</th><th>ไม่ระบุ</th><th>รวม</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- กราฟอารมณ์ตามจังหวัด -->
+  <div class="card">
+    <h2>แนวโน้มอารมณ์เฉลี่ยของผู้ใช้ตามจังหวัด</h2>
+    <div class="filter-buttons">
+      <button data-type="weekly" class="active">สัปดาห์</button>
+      <button data-type="monthly">เดือน</button>
+      <button data-type="yearly">ปี</button>
+    </div>
+    <canvas id="moodChart"></canvas>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, collectionGroup, getDocs, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyByrcAEkiXvFD5POwK-gh5vmRowTiCpYRI",
+  authDomain: "mental-health-project-39da8.firebaseapp.com",
+  projectId: "mental-health-project-39da8",
+  storageBucket: "mental-health-project-39da8.appspot.com",
+  messagingSenderId: "141911957949",
+  appId: "1:141911957949:web:becb3990f2ba553e16b2d4",
+  measurementId: "G-Z8352Q2PHF"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ---------------- NORMALIZE PROVINCE ----------------
+function normalizeProvince(name) {
+  if (!name) return "ไม่ระบุ";
+  if (name === "กทม" || name.toLowerCase() === "bangkok") return "กรุงเทพมหานคร";
+  return name.trim();
+}
+
+// ---------------- FETCH PROVINCE GENDER ----------------
+async function fetchProvinceGenderData() {
+  const snapshot = await getDocs(collection(db, "users"));
+  const provinceStats = {};
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    const province = normalizeProvince(data.province);
+    const gender = data.gender || "ไม่ระบุ";
+    if (!provinceStats[province]) provinceStats[province] = { ชาย:0,หญิง:0,ไม่ระบุ:0,userIds:[] };
+    if(gender==="ชาย") provinceStats[province].ชาย+=1;
+    else if(gender==="หญิง") provinceStats[province].หญิง+=1;
+    else provinceStats[province].ไม่ระบุ+=1;
+    provinceStats[province].userIds.push(doc.id);
+  });
+  return provinceStats;
+}
+
+// ---------------- FETCH USER WORDS ----------------
+async function fetchUserWords() {
+  try {
+    const snapshot = await getDocs(collectionGroup(db, "Messages"));
+    const wordCount = {};
+    snapshot.forEach(doc=>{
+      const data = doc.data();
+      if (data.sender && data.sender.toLowerCase() === "user") {
+  const text = (data.text || "").toLowerCase();
+
+  // Expanded stopword list (English + Thai basics)
+  const stopwords = new Set([
+    "i", "im", "me", "my", "mine", "you", "u", "your", "yours",
+    "he", "him", "his", "she", "her", "hers", "it", "its",
+    "we", "us", "our", "ours", "they", "them", "their", "theirs",
+    "is", "are", "am", "was", "were", "be", "been", "being",
+    "do", "does", "did", "done", "doing",
+    "have", "has", "had", "having",
+    "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+    "and", "or", "but", "so", "because",
+    "of", "in", "on", "at", "to", "for", "with", "about", "by", "from", "as",
+    "this", "that", "these", "those",
+    "a", "an", "the",
+    "how", "what", "when", "where", "which", "who", "whom", "why",
+    "chat",
+
+    // Thai stopwords (basic ones)
+    "และ", "คือ", "ว่า", "ให้", "ได้", "ไป", "มา", "แล้ว", "ก็", "ของ", "ไม่", "ใน", "จะ"
+  ]);
+
+  const words = text
+    .split(/\s+/)
+    .map(w => w.replace(/[^a-zก-๙]/gi, "")) // keep only letters (Eng + Thai)
+    .filter(w => {
+      if (w.length < 2) return false;
+      if (stopwords.has(w)) return false;
+      return true;
+    });
+
+  words.forEach(w => {
+    wordCount[w] = (wordCount[w] || 0) + 1;
+  });
+}
+
+    });
+    return Object.entries(wordCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  } catch(err) { console.error(err); return []; }
+}
+
+// ---------------- RENDER TABLE/CHART ----------------
+function renderTable(tbodySelector, dataRows) {
+  const tbody = document.querySelector(tbodySelector);
+  tbody.innerHTML = "";
+  dataRows.forEach(row=>{ tbody.innerHTML+=row; });
+}
+
+function renderWordChart(wordData) {
+  const ctx = document.getElementById("wordChart").getContext("2d");
+  new Chart(ctx, { 
+    type:"bar", 
+    data:{ 
+      labels:wordData.map(w=>w[0]), 
+      datasets:[{label:"จำนวนครั้ง", data:wordData.map(w=>w[1]), backgroundColor:"rgba(75,192,192,0.7)"}] 
+    }, 
+    options:{ responsive:true, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } } 
+  });
+}
+
+// ---------------- PROVINCE MAP ----------------
+async function renderProvinceMap(provinceStats) {
+  const geojson = await fetch("https://raw.githubusercontent.com/apisit/thailand.json/master/thailand.json")
+    .then(r => r.json());
+
+  const features = geojson.features.map(f => {
+    const provinceName = f.properties.name;
+    
+    const data = provinceStats[provinceName] || { ชาย: 0, หญิง: 0, ไม่ระบุ: 0 };
+    console.log(data)
+    return {
+      feature: f,
+      name: provinceName,
+      value: (data.ชาย || 0) + (data.หญิง || 0) + (data.ไม่ระบุ || 0)
+    };
+  });
+
+  const ctx = document.getElementById("provinceMap").getContext("2d");
+  new Chart(ctx, {
+    type: "choropleth",
+    data: {
+      labels: features.map(d => d.name),
+      datasets: [{
+        label: "จำนวนผู้ใช้",
+        outline: geojson,
+        data: features
+      }]
+    },
+    options: {
+      showOutline: true,
+      showGraticule: false,
+      scales: {
+        projection: {
+          axis: "x",
+          projection: "mercator"
+        },
+        color: {
+          axis: "x",
+          interpolate: d3.interpolateYlOrRd,
+          legend: {
+            position: "bottom"
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const f = context.dataset.data?.[context.dataIndex];
+              return `${f.name}: ${f.value} คน`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ---------------- MOOD CHART ----------------
+let moodChart;
+async function fetchMoodByProvince(provinceStats) {
+  const provinces = Object.keys(provinceStats);
+  const averages = [];
+
+  for (const province of provinces) {
+    let sum = 0, count = 0;
+    for (const userId of provinceStats[province].userIds) {
+      const userDocRef = doc(db, "moods", userId);
+      const col = collection(userDocRef, "weeklyAvg"); 
+      const snap = await getDocs(col);
+      snap.forEach(doc => {
+        const data = doc.data();
+        const value = data.avg ?? data.moodAvg ?? 0;
+        if(value) { sum += value; count++; }
+      });
+    }
+    averages.push(count > 0 ? parseFloat((sum / count).toFixed(2)) : 0);
+  }
+
+  return { provinces, averages };
+}
+
+async function renderMoodChart(provinceStats, type="weekly") {
+  const data = await fetchMoodByProvince(provinceStats, type);
+  const ctx = document.getElementById("moodChart").getContext("2d");
+
+  if (moodChart) moodChart.destroy();
+
+  moodChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: data.provinces,
+      datasets: [{
+        label: `ค่าเฉลี่ยอารมณ์ (${type})`,
+        data: data.averages,
+        backgroundColor: "rgba(255,206,86,0.7)"
+      }]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+// ---------------- MAIN ----------------
+(async ()=>{
+  const provinceStats = await fetchProvinceGenderData();
+
+  await renderProvinceMap(provinceStats);
+  renderTable("#provinceTable tbody", Object.entries(provinceStats).map(([p,s])=>
+    `<tr><td>${p}</td><td>${s.ชาย||0}</td><td>${s.หญิง||0}</td><td>${s.ไม่ระบุ||0}</td><td>${(s.ชาย||0)+(s.หญิง||0)+(s.ไม่ระบุ||0)}</td></tr>`
+  ));
+
+  const wordData = await fetchUserWords();
+  renderWordChart(wordData);
+  renderTable("#wordTable tbody", wordData.map(([w,c])=>`<tr><td>${w}</td><td>${c}</td></tr>`));
+
+  await renderMoodChart(provinceStats); 
+
+  document.querySelectorAll(".filter-buttons button").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      document.querySelectorAll(".filter-buttons button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      await renderMoodChart(provinceStats, btn.dataset.type);
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดการเนื้อหา - Admin Dashboard</title>
+<script type="module" src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"></script>
+<script type="module" src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"></script>
+<style>
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f9fafb; display:flex; min-height:100vh; color:#333; }
+  .sidebar { width:220px; background:#fff; display:flex; flex-direction:column; justify-content:space-between; padding:20px; box-shadow:2px 0 8px rgba(0,0,0,0.05); height:100vh; position:fixed; top:0; left:0; font-weight:600; font-size:14px; letter-spacing:0.02em; }
+  .top-section { display:flex; flex-direction:column; gap:18px; }
+  .nav-link { padding:12px; background:#f4f6f8; color:#555; text-decoration:none; border-radius:8px; text-align:center; transition:0.3s; }
+  .nav-link:hover { background:#3b82f6; color:#fff; }
+  .logout-btn { padding:14px 0; background:#ef4444; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600; letter-spacing:0.03em; }
+  .logout-btn:hover { background:#b91c1c; }
+  .main-content { margin-left:220px; flex-grow:1; padding:32px 36px; }
+  header { font-size:24px; font-weight:700; margin-bottom:24px; color:#2563eb; }
+  .button-container { margin-bottom:20px; display:flex; gap:12px; flex-wrap:wrap; }
+  .btn { padding:12px 20px; background:#2563eb; color:#fff; border:none; border-radius:12px; font-weight:600; cursor:pointer; transition:0.3s; }
+  .btn:hover { background:#1e40af; }
+  table { width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,0.05); margin-bottom:32px; }
+  th, td { padding:12px 16px; text-align:left; border-bottom:1px solid #e5e7eb; }
+  th { background:#f3f4f6; color:#2563eb; }
+  tr:hover { background:#f1f5f9; }
+  input[type="text"] { margin:10px 0; padding:10px; width:100%; border:1px solid #ccc; border-radius:8px; }
+  hr { border:0; border-top:2px solid #e5e7eb; margin:30px 0; }
+  /* โมดอล */
+  .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; }
+  .modal-content { background:#fff; padding:24px; border-radius:16px; width:320px; max-width:90%; }
+  .modal-content textarea { width:100%; padding:8px; margin-bottom:12px; border-radius:8px; border:1px solid #ccc; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="top-section">
+    <a href="Main.html" class="nav-link">ภาพรวม</a>
+    <a href="Report.html" class="nav-link">รายงาน</a>
+    <a href="manageContent.html" class="nav-link">จัดการเนื้อหา</a>
+    <a href="#" class="nav-link">ตั้งค่า</a>
+  </div>
+  <button class="logout-btn">ออกจากระบบ</button>
+</div>
+
+<div class="main-content">
+  <header>จัดการเนื้อหา</header>
+
+  <div class="button-container">
+    <button class="btn" onclick="openForm()">เพิ่มจิตแพทย์</button>
+    <button class="btn" style="background:#ff69b4;" onclick="openAdminPostForm()">โพสต์ แพทย์/แอดมิน</button>
+  </div>
+
+  <h2>รายการจิตแพทย์</h2>
+  <input type="text" id="searchPsych" placeholder="ค้นหาชื่อจิตแพทย์...">
+  <table id="contentTable">
+    <thead>
+      <tr>
+        <th>ชื่อ</th>
+        <th>เบอร์ติดต่อ</th>
+        <th>ความเชี่ยวชาญ</th>
+        <th>จัดการ</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <hr>
+
+  <h2>โพสต์ชุมชน</h2>
+  <input type="text" id="searchPost" placeholder="ค้นหาผู้โพสต์หรือเนื้อหา...">
+  <table id="postsTable">
+    <thead>
+      <tr>
+        <th>ผู้โพสต์</th>
+        <th>บทบาท / แหล่ง</th>
+        <th>เนื้อหา</th>
+        <th>วันที่</th>
+        <th>จัดการ</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- ฟอร์มเพิ่ม / แก้ไข จิตแพทย์ -->
+<div id="formModal" class="modal">
+  <div class="modal-content">
+    <h3 id="formTitle"></h3>
+    <input id="inputName" placeholder="ชื่อ" style="width:100%; padding:8px; margin-bottom:12px;">
+    <input id="inputContact" placeholder="เบอร์ติดต่อ" style="width:100%; padding:8px; margin-bottom:12px;">
+    <input id="inputSpecialty" placeholder="ความเชี่ยวชาญ" style="width:100%; padding:8px; margin-bottom:12px;">
+    <button class="btn" onclick="submitForm()">บันทึก</button>
+    <button class="btn" style="background:#ef4444;" onclick="closeForm()">ยกเลิก</button>
+  </div>
+</div>
+
+<!-- ฟอร์มโพสต์แอดมิน -->
+<div id="adminPostModal" class="modal">
+  <div class="modal-content">
+    <h3>โพสต์ แพทย์/แอดมิน</h3>
+    <textarea id="adminPostContent" placeholder="เนื้อหาโพสต์" rows="4"></textarea>
+    <button class="btn" onclick="submitAdminPost()">โพสต์</button>
+    <button class="btn" style="background:#ef4444;" onclick="closeAdminPostForm()">ยกเลิก</button>
+  </div>
+</div>
+
+<!-- ฟอร์มคอมเมนต์ -->
+<div id="commentModal" class="modal">
+  <div class="modal-content">
+    <h3>คอมเมนต์</h3>
+    <textarea id="commentText" placeholder="พิมพ์คอมเมนต์ของคุณ"></textarea>
+    <button class="btn" onclick="submitComment()">ส่ง</button>
+    <button class="btn" style="background:#ef4444;" onclick="closeCommentForm()">ยกเลิก</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyByrcAEkiXvFD5POwK-gh5vmRowTiCpYRI",
+  authDomain: "mental-health-project-39da8.firebaseapp.com",
+  projectId: "mental-health-project-39da8",
+  storageBucket: "mental-health-project-39da8.appspot.com",
+  messagingSenderId: "141911957949",
+  appId: "1:141911957949:web:becb3990f2ba553e16b2d4",
+  measurementId: "G-Z8352Q2PHF"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// จำลองว่าล็อกอินแล้วมี username
+const adminUsername = localStorage.getItem("adminUsername") || "admin1";
+
+let editId = null;
+const contentTable = document.querySelector('#contentTable tbody');
+const formModal = document.getElementById('formModal');
+const formTitle = document.getElementById('formTitle');
+const inputName = document.getElementById('inputName');
+const inputContact = document.getElementById('inputContact');
+const inputSpecialty = document.getElementById('inputSpecialty');
+
+const postsTable = document.querySelector('#postsTable tbody');
+const adminPostModal = document.getElementById('adminPostModal');
+const adminPostContent = document.getElementById('adminPostContent');
+
+const commentModal = document.getElementById('commentModal');
+const commentText = document.getElementById('commentText');
+let currentCommentPostId = null;
+let currentCommentCollection = null;
+
+// --- ฟังก์ชันจิตแพทย์ ---
+window.openForm = function(data=null, id=null){
+  editId = id || null;
+  formTitle.textContent = (id ? 'แก้ไข' : 'เพิ่ม') + ' จิตแพทย์';
+  inputName.value = data?.name || '';
+  inputContact.value = data?.contact || '';
+  inputSpecialty.value = data?.specialty || '';
+  formModal.style.display = 'flex';
+}
+window.closeForm = function(){ formModal.style.display='none'; }
+window.submitForm = async function(){
+  const data = {
+    name: inputName.value.trim(),
+    contact: inputContact.value.trim(),
+    specialty: inputSpecialty.value.trim()
+  };
+  if(!data.name || !data.contact || !data.specialty){ alert('กรุณากรอกข้อมูลให้ครบทุกช่อง'); return; }
+  try {
+    if(editId){
+      await updateDoc(doc(db, 'psychiatrists', editId), data);
+    } else {
+      await addDoc(collection(db, 'psychiatrists'), data);
+    }
+    closeForm();
+    loadData();
+  } catch(e){ alert('เกิดข้อผิดพลาด: ' + e.message); }
+}
+
+async function loadData(){
+  contentTable.innerHTML='';
+  try {
+    const querySnapshot = await getDocs(collection(db, 'psychiatrists'));
+    querySnapshot.forEach(docSnap=>{
+      const d = docSnap.data();
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${d.name}</td>
+        <td>${d.contact}</td>
+        <td>${d.specialty}</td>
+        <td>
+          <button class="btn" style="padding:4px 8px;" onclick='openForm(${JSON.stringify(d)}, "${docSnap.id}")'>แก้ไข</button>
+          <button class="btn" style="padding:4px 8px;background:#ef4444;" onclick='deleteContent("${docSnap.id}")'>ลบ</button>
+        </td>
+      `;
+      contentTable.appendChild(row);
+    });
+  } catch(e){ alert('ไม่สามารถโหลดข้อมูลได้: ' + e.message); }
+}
+window.deleteContent = async function(id){
+  if(confirm('คุณต้องการลบรายการนี้ใช่หรือไม่?')){
+    try { await deleteDoc(doc(db, 'psychiatrists', id)); loadData(); } 
+    catch(e){ alert('ลบไม่สำเร็จ: ' + e.message); }
+  }
+}
+loadData();
+
+// --- ฟังก์ชันโพสต์แอดมิน ---
+window.openAdminPostForm = function(){
+  adminPostContent.value = '';
+  adminPostModal.style.display = 'flex';
+}
+window.closeAdminPostForm = function(){ adminPostModal.style.display = 'none'; }
+window.submitAdminPost = async function(){
+  const data = {
+    user: adminUsername,
+    role: "Admin",
+    content: adminPostContent.value.trim(),
+    createdAt: serverTimestamp()
+  };
+  if(!data.content){ alert('กรุณากรอกเนื้อหาโพสต์'); return; }
+  try {
+    await addDoc(collection(db, 'adminPosts'), data);
+    alert('โพสต์สำเร็จ');
+    closeAdminPostForm();
+    loadPosts();
+  } catch(e){ alert('เกิดข้อผิดพลาด: ' + e.message); }
+}
+
+// --- ฟังก์ชันคอมเมนต์ ---
+window.openCommentForm = function(collectionName, postId){
+  currentCommentPostId = postId;
+  currentCommentCollection = collectionName;
+  commentText.value='';
+  commentModal.style.display='flex';
+}
+window.closeCommentForm = function(){ commentModal.style.display='none'; }
+window.submitComment = async function(){
+  const text = commentText.value.trim();
+  if(!text){ alert('กรุณาพิมพ์คอมเมนต์'); return; }
+  try {
+    await addDoc(collection(db, `${currentCommentCollection}/${currentCommentPostId}/comments`), {
+      text,
+      user: adminUsername,
+      role: "Admin",
+      createdAt: serverTimestamp()
+    });
+    closeCommentForm();
+    loadPosts();
+  } catch(e){ alert('โพสต์คอมเมนต์ไม่สำเร็จ: '+e.message); }
+}
+
+// โหลดโพสต์ชุมชน
+async function loadPosts(){
+  postsTable.innerHTML='';
+  try {
+    const userSnapshot = await getDocs(collection(db, 'userPosts'));
+    userSnapshot.forEach(docSnap=>{
+      const d = docSnap.data();
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${d.user}</td>
+        <td>${d.role || "User"}</td>
+        <td>${d.content}</td>
+        <td>${d.createdAt?.toDate ? d.createdAt.toDate().toLocaleString() : '-'}</td>
+        <td>
+          <button class="btn" style="padding:4px 8px;background:#10b981;" onclick='openCommentForm("userPosts","${docSnap.id}")'>คอมเมนต์</button>
+        </td>
+      `;
+      postsTable.appendChild(row);
+    });
+
+    const adminSnapshot = await getDocs(collection(db, 'adminPosts'));
+    adminSnapshot.forEach(docSnap=>{
+      const d = docSnap.data();
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${d.user}</td>
+        <td>${d.role}</td>
+        <td>${d.content}</td>
+        <td>${d.createdAt?.toDate ? d.createdAt.toDate().toLocaleString() : '-'}</td>
+        <td>
+          <button class="btn" style="padding:4px 8px;" onclick='editAdminPost("${docSnap.id}", ${JSON.stringify(d)})'>แก้ไข</button>
+          <button class="btn" style="padding:4px 8px;background:#ef4444;" onclick='deletePost("adminPosts","${docSnap.id}")'>ลบ</button>
+        </td>
+      `;
+      postsTable.appendChild(row);
+    });
+  } catch(e){ alert('โหลดโพสต์ไม่สำเร็จ: '+ e.message); }
+}
+
+// --- ฟังก์ชันแก้ไขโพสต์แอดมิน ---
+window.editAdminPost = function(id, data){
+  adminPostContent.value = data.content;
+  adminPostModal.style.display = 'flex';
+
+  window.submitAdminPost = async function(){
+    try {
+      await updateDoc(doc(db, 'adminPosts', id), {
+        content: adminPostContent.value.trim(),
+        updatedAt: serverTimestamp()
+      });
+      alert('แก้ไขโพสต์สำเร็จ');
+      closeAdminPostForm();
+      loadPosts();
+    } catch(e){ alert('แก้ไขไม่สำเร็จ: ' + e.message); }
+  }
+}
+
+window.deletePost = async function(collectionName, id){
+  if(confirm('คุณต้องการลบโพสต์นี้ใช่หรือไม่?')){
+    try { await deleteDoc(doc(db, collectionName, id)); loadPosts(); } 
+    catch(e){ alert('ลบไม่สำเร็จ: ' + e.message); }
+  }
+}
+loadPosts();
+
+// --- Search ฟังก์ชัน ---
+document.getElementById('searchPsych').addEventListener('keyup', function() {
+  let filter = this.value.toLowerCase();
+  let rows = document.querySelectorAll('#contentTable tbody tr');
+  rows.forEach(row => {
+    let text = row.innerText.toLowerCase();
+    row.style.display = text.includes(filter) ? '' : 'none';
+  });
+});
+
+document.getElementById('searchPost').addEventListener('keyup', function() {
+  let filter = this.value.toLowerCase();
+  let rows = document.querySelectorAll('#postsTable tbody tr');
+  rows.forEach(row => {
+    let text = row.innerText.toLowerCase();
+    row.style.display = text.includes(filter) ? '' : 'none';
+  });
+});
+</script>
+</body>
+</html>
