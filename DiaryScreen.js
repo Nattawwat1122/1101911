@@ -15,19 +15,20 @@ export default function DiaryScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   const [title, setTitle] = useState('');
-  const [categories, setCategories] = useState([]); // เลือกหลาย category
+  const [categories, setCategories] = useState([]);
   const [content, setContent] = useState('');
+
+  const [categoryOptions, setCategoryOptions] = useState([]); // ✅ โหลดจาก Firestore
 
   const navigation = useNavigation();
   const user = getAuth().currentUser;
-
-  const categoryOptions = ["การเรียน", "การทำงาน", "ความเครียด", "การระบาย", "อื่น ๆ"];
 
   function getTodayDate() {
     const today = new Date();
     return today.toISOString().split('T')[0];
   }
 
+  // โหลดบันทึก
   useEffect(() => {
     if (!user) return;
     const loadEntries = async () => {
@@ -44,6 +45,25 @@ export default function DiaryScreen() {
     };
     loadEntries();
   }, [user]);
+
+  // โหลดหมวดหมู่จาก Firestore
+  useEffect(() => {
+  const loadCategories = async () => {
+    try {
+      const snap = await getDocs(collection(db, "categories"));
+      let data = [];
+      snap.forEach(docSnap => {
+        data.push(docSnap.id); // ใช้ document id แทน field
+      });
+      setCategoryOptions(data);
+      console.log("✅ categoryOptions:", data);
+    } catch (error) {
+      console.error("โหลดหมวดหมู่ผิดพลาด: ", error);
+    }
+  };
+  loadCategories();
+}, []);
+
 
   const onDayPress = (day) => setSelectedDate(day.dateString);
 
