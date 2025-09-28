@@ -1,106 +1,85 @@
-// Chat.js
 import React, { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from "react-native";
 import axios from "axios";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-} from "firebase/firestore";
-import { db } from "../firebase";
+import styles from "./ChatStyles";
 
-export default function Chat({ chatId, userId, onSendMessage }) {
+// ตั้งค่า URL ให้เหมาะกับอุปกรณ์ที่รัน
+const DEV_SERVER_URL = Platform.OS === 'ios' ? 'http://localhost:5000' : ' http://192.168.1.137:5000';
+// ⚠️ แทนที่ <YOUR-LAN-IP> เป็น IP เครื่องเซิร์ฟเวอร์เวลารันบนมือถือจริง/โปรดักชัน
+const PROD_SERVER_URL = ' http://192.168.1.137:5000';
+const SERVER_URL = __DEV__ ? DEV_SERVER_URL : PROD_SERVER_URL;
+
+// axios instance
+const api = axios.create({
+  baseURL: SERVER_URL,
+  timeout: 15000,
+  headers: { "Content-Type": "application/json" },
+});
+
+export default function App() {
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
-  const scrollViewRef = useRef();
+  const [chatHistory, setChatHistory] = useState([]); // <- ไม่มี generic
+  const [loading, setLoading] = useState(false);
+  const scrollViewRef = useRef(null); // <- ไม่มี <ScrollView>
 
-  // ✅ โหลด history ของแชทจาก Firestore แบบ realtime
-  useEffect(() => {
-    if (!chatId || !userId) return;
-
-    const messagesRef = collection(
-      db,
-      "ChatHistory",
-      userId,
-      "Chats",
-      chatId,
-      "Messages"
-    );
-
-    const q = query(messagesRef, orderBy("timestamp", "asc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedMessages = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setMessages(loadedMessages);
-    });
-
-    return () => unsubscribe();
-  }, [chatId, userId]);
-
-  // ✅ ส่งข้อความ
   const handleSend = async () => {
-    if (!message.trim() || !chatId || !userId) return;
+    const text = message.trim();
+    if (!text || loading) return;
 
-    const userMsg = { sender: "user", text: message };
-    onSendMessage(chatId, userMsg); // ส่งไป Firestore
+    const userMsg = { sender: "user", text }; // <- ไม่มี as const
+    setChatHistory((prev) => [...prev, userMsg]);
+    setMessage("");
+    setLoading(true);
 
     try {
-      const res = await axios.post("http://10.0.2.2:5000/chat", { message });
-      const aiMsg = { sender: "ai", text: res.data.reply };
-      onSendMessage(chatId, aiMsg); // ส่งกลับเข้า Firestore
+      const res = await api.post("/chat", { message: text });
+      const aiMsg = { sender: "ai", text: (res && res.data && res.data.reply) ? res.data.reply : "ไม่สามารถตอบได้" };
+      setChatHistory((prev) => [...prev, aiMsg]);
     } catch (err) {
-      console.error("Chat error:", err);
-      const errorMsg = { sender: "ai", text: "เกิดข้อผิดพลาดในการตอบกลับ" };
-      onSendMessage(chatId, errorMsg);
+      console.error("Error sending message:", err?.message || err);
+      setChatHistory((prev) => [...prev, { sender: "ai", text: "เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์" }]);
+    } finally {
+      setLoading(false);
     }
-
-    setMessage("");
   };
 
   useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
-
-  if (!chatId) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>กรุณาเลือกหรือสร้างแชทใหม่</Text>
-      </View>
-    );
-  }
+    if (scrollViewRef.current) {
+      scrollViewRef.current.scrollToEnd({ animated: true });
+    }
+  }, [chatHistory]);
 
   return (
     <View style={styles.container}>
       <ScrollView
+        style={styles.chatContainer}
         ref={scrollViewRef}
-        contentContainerStyle={styles.scrollContainer}
+        contentContainerStyle={{ paddingVertical: 10 }}
+        keyboardShouldPersistTaps="handled"
       >
-        {messages.map((msg) => (
+        {chatHistory.map((chat, index) => (
           <View
-            key={msg.id}
+            key={index}
             style={[
               styles.messageBubble,
-              msg.sender === "user"
-                ? styles.userBubble
-                : styles.aiBubble,
+              {
+                alignSelf: chat.sender === "user" ? "flex-end" : "flex-start",
+                backgroundColor: chat.sender === "user" ? "#DCF8C6" : "#cbcbcbff",
+              },
             ]}
           >
-            <Text>{msg.text}</Text>
+            <Text>{chat.text}</Text>
           </View>
         ))}
+
+        {loading && (
+          <View style={[styles.messageBubble, { alignSelf: "flex-start", backgroundColor: "#cbcbcbff" }]}>
+            <ActivityIndicator size="small" />
+          </View>
+        )}
       </ScrollView>
 
-      <View style={styles.inputContainer}>
+      <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
           placeholder="พิมพ์ข้อความ..."
@@ -108,71 +87,13 @@ export default function Chat({ chatId, userId, onSendMessage }) {
           onChangeText={setMessage}
           onSubmitEditing={handleSend}
           returnKeyType="send"
+          editable={!loading}
+          blurOnSubmit={false}
         />
-        <TouchableOpacity onPress={handleSend} style={styles.sendButton}>
-          <Text style={styles.sendText}>ส่ง</Text>
+        <TouchableOpacity onPress={handleSend} style={styles.button} disabled={loading}>
+          <Text style={styles.buttonText}>{loading ? "กำลังส่ง..." : "ส่ง"}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 12,
-    backgroundColor: "#fff",
-  },
-  scrollContainer: {
-    paddingVertical: 10,
-  },
-  messageBubble: {
-    marginVertical: 6,
-    padding: 10,
-    borderRadius: 10,
-    maxWidth: "80%",
-  },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: "#DCF8C6",
-  },
-  aiBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: "#E8E8E8",
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderColor: "#ccc",
-  },
-  input: {
-    flex: 1,
-    padding: 10,
-    borderColor: "#aaa",
-    borderWidth: 1,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  sendButton: {
-    backgroundColor: "#2196F3",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-  },
-  sendText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 16,
-    color: "#777",
-  },
-});
