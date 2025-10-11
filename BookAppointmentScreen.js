@@ -22,12 +22,26 @@ const ALL_TIMES = [
 
 const radius = 14;
 
+// ---- Helpers for local date/time ----
+const formatLocalDate = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toMinutes = (hhmm) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+
 export default function BookAppointmentScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { doctor } = route.params || {};
 
-  const [selectedDate, setSelectedDate] = useState(null);
+  // Default selected date = today (local)
+  const [selectedDate, setSelectedDate] = useState(formatLocalDate());
   const [selectedTime, setSelectedTime] = useState(null);
   const [duration, setDuration] = useState(30);
   const [loadingDay, setLoadingDay] = useState(false);
@@ -73,6 +87,14 @@ export default function BookAppointmentScreen() {
     };
   }, [selectedDate]);
 
+  // today context (recomputed each render)
+  const todayLocal = formatLocalDate();
+  const now = new Date();
+  const isToday = selectedDate === todayLocal;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  // Optional buffer (minutes) before the earliest bookable time today
+  const BUFFER = 0; // เปลี่ยนเป็น 30 ถ้าต้องการเว้นล่วงหน้า 30 นาที
+
   const computePrice = (m) => (m === 60 ? 900 : 500);
 
   const handleConfirm = () => {
@@ -117,6 +139,7 @@ export default function BookAppointmentScreen() {
           setSelectedTime(null); // reset เวลาเมื่อเปลี่ยนวัน
         }}
         markedDates={markedDates}
+        minDate={todayLocal} // อนุญาตจองตั้งแต่วันนี้ขึ้นไป
         theme={{
           textDayFontWeight: '600',
           textMonthFontWeight: '800',
@@ -135,6 +158,8 @@ export default function BookAppointmentScreen() {
           <Text style={styles.legendText}>ไม่ว่าง</Text>
           <View style={[styles.legendDot, { backgroundColor: '#e5e7eb' }]} />
           <Text style={styles.legendText}>ว่าง</Text>
+          <View style={[styles.legendDot, { backgroundColor: '#fecaca' }]} />
+          <Text style={styles.legendText}>ผ่านไปแล้ว</Text>
         </View>
       </View>
 
@@ -147,15 +172,17 @@ export default function BookAppointmentScreen() {
         <View style={styles.timeBox}>
           {ALL_TIMES.map((t) => {
             const isTaken = !!taken[t];
+            const isPastToday = isToday && toMinutes(t) <= (nowMinutes + BUFFER);
+            const disabled = isTaken || isPastToday;
             const isSelected = selectedTime === t;
             return (
               <TouchableOpacity
                 key={t}
-                disabled={isTaken}
+                disabled={disabled}
                 style={[
                   styles.timeChip,
                   isSelected && styles.timeChipActive,
-                  isTaken && styles.timeChipDisabled,
+                  disabled && styles.timeChipDisabled,
                 ]}
                 onPress={() => setSelectedTime(t)}
               >
@@ -165,7 +192,7 @@ export default function BookAppointmentScreen() {
                     isSelected && { color: '#fff', fontWeight: '800' },
                   ]}
                 >
-                  {t} {isTaken ? '· ไม่ว่าง' : ''}
+                  {t} {isTaken ? '· ไม่ว่าง' : isPastToday ? '· ผ่านไปแล้ว' : ''}
                 </Text>
               </TouchableOpacity>
             );
