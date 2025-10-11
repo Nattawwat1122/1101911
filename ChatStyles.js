@@ -1,16 +1,13 @@
-// ChatStyles.js
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    flexDirection: "column",
     backgroundColor: "#fff",
   },
   chatContainer: {
     flex: 1,
-    padding: 15,
-    backgroundColor: '#fff',
+    paddingHorizontal: 15,
   },
   messageBubble: {
     maxWidth: '75%',
@@ -18,8 +15,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 18,
     marginBottom: 10,
-    fontSize: 15,
-    lineHeight: 21,
   },
   inputBar: {
     flexDirection: 'row',
@@ -30,22 +25,54 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    padding: 10,
+    height: 40,
+    paddingHorizontal: 15,
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 20,
+    backgroundColor: '#fff',
   },
   button: {
     marginLeft: 10,
-    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#f280ceff', // iOS Blue
   },
   buttonText: {
     color: 'white',
     fontSize: 15,
+    fontWeight: 'bold',
+  },
+  historyButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    left: 15,
+    zIndex: 10,
+    padding: 10,
+  },
+  historyButtonText: {
+    fontSize: 24,
+    color: '#333',
+  },
+  // ==== 👇 เปลี่ยน Style ส่วน Modal เป็น Drawer 👇 ====
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', // พื้นหลังสีดำโปร่งแสง
+  },
+  drawerContainer: {
+    height: '100%',
+    width: '80%', // ความกว้างของ Drawer
+    backgroundColor: 'white',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 20,
   },
 });
 
