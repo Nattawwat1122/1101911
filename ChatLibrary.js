@@ -7,8 +7,10 @@ import {
   StyleSheet,
   Dimensions,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import Chat from "./Chat";
+import Chat from "./chat";
 
 import {
   collection,
@@ -28,7 +30,6 @@ export default function ChatScreen() {
   const [selectedChatId, setSelectedChatId] = useState(null);
   const [sidebarVisible, setSidebarVisible] = useState(true);
 
-  // โหลดแชททั้งหมดของ user
   useEffect(() => {
     loadChats();
   }, []);
@@ -36,10 +37,7 @@ export default function ChatScreen() {
   const loadChats = async () => {
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser) {
-        console.warn("User not logged in");
-        return;
-      }
+      if (!currentUser) return;
 
       const chatsRef = collection(db, "ChatHistory", currentUser.uid, "Chats");
       const snapshot = await getDocs(query(chatsRef, orderBy("created_at", "asc")));
@@ -57,14 +55,10 @@ export default function ChatScreen() {
     }
   };
 
-  // สร้างแชทใหม่
   const createNewChat = async () => {
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser) {
-        console.warn("User not logged in");
-        return;
-      }
+      if (!currentUser) return;
 
       const chatsRef = collection(db, "ChatHistory", currentUser.uid, "Chats");
       const newChatRef = await addDoc(chatsRef, {
@@ -86,11 +80,10 @@ export default function ChatScreen() {
     }
   };
 
-
   const deleteChat = async (chatId) => {
     Alert.alert(
       "ลบแชท",
-      `คุณต้องการลบแชทนี้หรือไม่?`,
+      "คุณต้องการลบแชทนี้หรือไม่?",
       [
         { text: "ยกเลิก", style: "cancel" },
         {
@@ -103,9 +96,7 @@ export default function ChatScreen() {
 
               await deleteDoc(doc(db, "ChatHistory", currentUser.uid, "Chats", chatId));
               setChats((prev) => prev.filter((chat) => chat.id !== chatId));
-              if (selectedChatId === chatId) {
-                setSelectedChatId(null);
-              }
+              if (selectedChatId === chatId) setSelectedChatId(null);
             } catch (error) {
               console.error("Error deleting chat:", error);
             }
@@ -116,14 +107,10 @@ export default function ChatScreen() {
     );
   };
 
-  // ส่งข้อความ
   const onSendMessage = async (chatId, message) => {
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser) {
-        console.warn("User not logged in");
-        return;
-      }
+      if (!currentUser) return;
 
       const messagesRef = collection(
         db,
@@ -140,7 +127,6 @@ export default function ChatScreen() {
         timestamp: serverTimestamp(),
       });
 
-      // อัพเดต last_updated
       await setDoc(
         doc(db, "ChatHistory", currentUser.uid, "Chats", chatId),
         { last_updated: serverTimestamp() },
@@ -149,10 +135,6 @@ export default function ChatScreen() {
     } catch (error) {
       console.error("Error sending message:", error);
     }
-  };
-
-  const handleLongPress = (chatId, title) => {
-    deleteChat(chatId);
   };
 
   const renderChatItem = ({ item }) => (
@@ -165,52 +147,56 @@ export default function ChatScreen() {
         setSelectedChatId(item.id);
         if (!sidebarVisible) setSidebarVisible(true);
       }}
-      onLongPress={() => handleLongPress(item.id, item.title)}
+      onLongPress={() => deleteChat(item.id)}
     >
       <Text style={styles.chatTitle}>{item.title}</Text>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      {sidebarVisible && (
-        <View style={styles.sidebar}>
-          <TouchableOpacity onPress={createNewChat} style={styles.newChatButton}>
-            <Text style={styles.newChatText}>+ สร้างแชทใหม่</Text>
-          </TouchableOpacity>
-          <FlatList
-            data={chats}
-            renderItem={renderChatItem}
-            keyExtractor={(item) => item.id}
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>ยังไม่มีแชท กดสร้างใหม่ได้เลย</Text>
-            }
-          />
-        </View>
-      )}
-
-      <View style={[styles.chatArea, sidebarVisible ? {} : styles.chatAreaFull]}>
-        <TouchableOpacity
-          style={styles.toggleButton}
-          onPress={() => setSidebarVisible((prev) => !prev)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.toggleButtonText}>
-            {sidebarVisible ? "←" : "→"}
-          </Text>
-        </TouchableOpacity>
-
-        {selectedChatId ? (
-          <Chat
-            chatId={selectedChatId}
-            userId={auth.currentUser?.uid}
-            onSendMessage={onSendMessage}
-          />
-        ) : (
-          <Text style={styles.emptyText}>เลือกแชทหรือสร้างใหม่</Text>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={styles.container}>
+        {sidebarVisible && (
+          <View style={styles.sidebar}>
+            <TouchableOpacity onPress={createNewChat} style={styles.newChatButton}>
+              <Text style={styles.newChatText}>+ สร้างแชทใหม่</Text>
+            </TouchableOpacity>
+            <FlatList
+              data={chats}
+              renderItem={renderChatItem}
+              keyExtractor={(item) => item.id}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>ยังไม่มีแชท กดสร้างใหม่ได้เลย</Text>
+              }
+            />
+          </View>
         )}
+
+        <View style={[styles.chatArea, sidebarVisible ? {} : styles.chatAreaFull]}>
+          <TouchableOpacity
+            style={styles.toggleButton}
+            onPress={() => setSidebarVisible((prev) => !prev)}
+          >
+            <Text style={styles.toggleButtonText}>
+              {sidebarVisible ? "←" : "→"}
+            </Text>
+          </TouchableOpacity>
+
+          {selectedChatId ? (
+            <Chat
+              chatId={selectedChatId}
+              userId={auth.currentUser?.uid}
+              onSendMessage={onSendMessage}
+            />
+          ) : (
+            <Text style={styles.emptyText}>เลือกแชทหรือสร้างใหม่</Text>
+          )}
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -219,44 +205,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     flexDirection: "row",
+    backgroundColor: "#fafafa",
   },
   sidebar: {
-    width: width * 0.3,
-    backgroundColor: "#f0f0f0",
+    width: width * 0.32,
+    backgroundColor: "#f9f9f9",
     borderRightWidth: 1,
-    borderRightColor: "#ccc",
+    borderRightColor: "#ddd",
     padding: 10,
   },
   newChatButton: {
     backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 6,
-    marginBottom: 10,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#ddd",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 4,
+    borderColor: "#ffffffff",
+    alignItems: "center",
   },
   newChatText: {
-    color: "#333",
+    color: "#de04a0ff",
     fontWeight: "bold",
-    textAlign: "center",
     fontSize: 16,
   },
   chatItem: {
     padding: 12,
-    borderRadius: 6,
-    backgroundColor: "#ddd",
+    borderRadius: 8,
+    backgroundColor: "#eee",
     marginBottom: 8,
   },
   chatItemSelected: {
-    backgroundColor: "#bbb",
+    backgroundColor: "#ffcff4ff",
   },
   chatTitle: {
     fontSize: 16,
+    color: "#333",
   },
   chatArea: {
     flex: 1,
@@ -273,16 +256,11 @@ const styles = StyleSheet.create({
   },
   toggleButton: {
     alignSelf: "flex-start",
-    marginBottom: 10,
+    marginBottom: 8,
     backgroundColor: "#fff",
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
     borderWidth: 1,
     borderColor: "#ddd",
   },
@@ -290,7 +268,5 @@ const styles = StyleSheet.create({
     color: "#333",
     fontWeight: "bold",
     fontSize: 18,
-    lineHeight: 18,
-    textAlign: "center",
   },
 });
