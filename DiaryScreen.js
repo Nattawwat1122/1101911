@@ -18,7 +18,7 @@ const db = getFirestore();
  ------------------------ */
 const DEV_SERVER_URL =
   Platform.OS === 'ios' ? 'http://localhost:11434' : 'http://10.0.2.2:11434';
-const PROD_SERVER_URL = 'http://<YOUR-LAN-IP>:11434';
+const PROD_SERVER_URL = 'http://<YOUR-LAN-IP>:11434'; // <-- อย่าลืมเปลี่ยน IP ถ้าทดสอบบนเครื่องจริง
 const SERVER_URL = __DEV__ ? DEV_SERVER_URL : PROD_SERVER_URL;
 
 const OLLAMA_MODEL = 'llama3.1';
@@ -31,7 +31,6 @@ const api = axios.create({
 
 /* ===================== Helpers & Mappings ===================== */
 
-// ✅ 1. เพิ่ม Mapping ระหว่างหมวดหมู่กับความเชี่ยวชาญของแพทย์
 const CATEGORY_TO_SPECIALTY_MAP = {
   'ความรัก': 'ปัญหาครอบครัว / คู่รัก / การแต่งงาน',
   'ความสัมพันธ์': 'ปัญหาครอบครัว / คู่รัก / การแต่งงาน',
@@ -43,19 +42,17 @@ const CATEGORY_TO_SPECIALTY_MAP = {
   'อื่นๆ': 'จิตเวชผู้สูงอายุ, ภาวะสมองเสื่อม, อัลไซเมอร์',
 };
 
-// ✅ 2. เพิ่มฟังก์ชันสำหรับแปลงหมวดหมู่เป็นความเชี่ยวชาญ
 function getSpecialtiesFromCategories(selectedCategories) {
   if (!selectedCategories || selectedCategories.length === 0) {
-    return []; // คืนค่าเป็น array ว่างถ้าไม่ได้เลือกหมวดหมู่
+    return [];
   }
-  // ใช้ Set เพื่อป้องกันความเชี่ยวชาญซ้ำซ้อน (เช่น เลือกทั้ง 'ความรัก' และ 'ความสัมพันธ์')
   const specialties = new Set();
   selectedCategories.forEach(cat => {
     if (CATEGORY_TO_SPECIALTY_MAP[cat]) {
       specialties.add(CATEGORY_TO_SPECIALTY_MAP[cat]);
     }
   });
-  return Array.from(specialties); // แปลง Set กลับเป็น Array
+  return Array.from(specialties);
 }
 
 const EMOTION_MAP_NEW = {
@@ -78,16 +75,152 @@ function getTodayDate() {
   return today.toISOString().split('T')[0];
 }
 
-// ... (ส่วนฟังก์ชัน helpers อื่นๆ ไม่มีการเปลี่ยนแปลง) ...
-function normalizeAIScore(n) { const x = Number(n); return Number.isInteger(x) && x >= 0 && x <= 4 ? x : null; }
-function pickEmotionScoreFromAPI(data) { if (!data || typeof data !== 'object') return null; if (typeof data.emotionScore === 'number' || data.emotionScore === null) return data.emotionScore; if (typeof data.emotion_score === 'number' || data.emotion_score === null) return data.emotion_score; return null; }
-function pickEmotionExplanationFromAPI(data) { if (!data || typeof data !== 'object') return null; if (typeof data.emotionExplanation === 'string') return data.emotionExplanation.trim(); if (typeof data.emotion_explanation === 'string') return data.emotion_explanation.trim(); return null; }
-function safeParseJSONObject(s) { try { if (!s) return null; const m = s.match(/\{[\s\S]*\}/); if (!m) return null; return JSON.parse(m[0]); } catch { return null; } }
-async function callOllamaChatWithRetry(message, retries = 1) { /* ... โค้ดเดิม ... */ return { risk: 'ปกติ' }; } // Placeholder for brevity
-async function getSmartEmotionEval(message) { /* ... โค้ดเดิม ... */ return { risk: 'ปกติ' }; } // Placeholder for brevity
+function normalizeAIScore(n) {
+  const x = Number(n);
+  return Number.isInteger(x) && x >= 0 && x <= 4 ? x : null;
+}
 
+function pickEmotionScoreFromAPI(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (typeof data.emotionScore === 'number' || data.emotionScore === null) return data.emotionScore;
+  if (typeof data.emotion_score === 'number' || data.emotion_score === null) return data.emotion_score;
+  return null;
+}
 
-/* =================== ⛑️ High-risk keyword guard (local) ===================== */
+function pickEmotionExplanationFromAPI(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (typeof data.emotionExplanation === 'string') return data.emotionExplanation.trim();
+  if (typeof data.emotion_explanation === 'string') return data.emotion_explanation.trim();
+  return null;
+}
+
+function safeParseJSONObject(s) {
+  try {
+    if (!s) return null;
+    const m = s.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+}
+
+/* ===================== Ollama /api/chat ===================== */
+async function callOllamaChatWithRetry(message, retries = 1) {
+  let lastErr;
+  const prompt = `
+คุณคือผู้ช่วยวิเคราะห์อารมณ์ ให้ตอบเป็น JSON เท่านั้น (ห้ามมีคำบรรยายก่อน/หลัง)
+วิเคราะห์จาก "ความหมาย/รูปประโยค/บริบท" ของข้อความด้านล่างเท่านั้น
+ห้ามใช้การจับคีย์เวิร์ดตรงตัว และห้ามตอบสิ่งอื่นนอกจาก JSON
+
+ข้อความบันทึก:
+<<<
+${message}
+>>>
+
+ให้ตอบ JSON ที่มีคีย์ดังนี้:
+{
+  "risk": "เสี่ยงสูง" | "เสี่ยงต่ำ" | "ปกติ",
+  "emotion": "เศร้า" | "วิตกกังวล" | "เหนื่อย" | "ปกติ" | "อารมณ์ดี" | null,
+  "emotion_score": 0 | 1 | 2 | 3 | 4 | null,
+  "emotion_explanation": "สรุปเหตุผลเชิงอธิบาย 1–3 ประโยค อธิบายว่าทำไมถึงได้ emotion นี้"
+}
+
+กติกา:
+- วิเคราะห์จากความหมาย ไม่ใช่จากคำตรงตัว
+- Mapping คะแนน:
+    เศร้า = 0, วิตกกังวล = 1, เหนื่อย = 2, ปกติ = 3, อารมณ์ดี = 4
+- ใช้ค่า null เฉพาะกรณี "ข้อความว่าง/ไม่สื่อสาร/สุ่ม/อ่านไม่รู้เรื่อง" เท่านั้น
+  กรณีที่มีความหมายแต่ไม่ชัด ให้เลือกอารมณ์ที่เป็นไปได้มากที่สุด
+- ห้ามส่งข้อความนอกเหนือจาก JSON เดียว
+`.trim();
+
+  const payload = {
+    model: OLLAMA_MODEL,
+    format: 'json',
+    stream: false,
+    options: { temperature: 0, num_predict: 256 },
+    messages: [
+      { role: 'system', content: 'คุณเป็นผู้ช่วยวิเคราะห์อารมณ์ ตอบเป็น JSON เท่านั้น' },
+      { role: 'user', content: prompt },
+    ],
+  };
+
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await api.post('/api/chat', payload);
+      const raw = res?.data?.message?.content || res?.data?.response || '';
+      console.log('🧠 RAW LLM:', raw);
+      const parsed = safeParseJSONObject(raw);
+      if (parsed) return parsed;
+
+      const strictPayload = {
+        ...payload,
+        messages: [
+          { role: 'system', content: 'ตอบเป็น JSON เดียวเท่านั้น ห้ามมีข้อความอื่น' },
+          {
+            role: 'user',
+            content:
+              `ตอบเป็น JSON เดียวเท่านั้น:\n` +
+              `{"risk":"...","emotion":"...","emotion_score":...,"emotion_explanation":"..."}\n\n` +
+              `วิเคราะห์ข้อความ:\n<<<\n${message}\n>>>`,
+          },
+        ],
+      };
+      const res2 = await api.post('/api/chat', strictPayload);
+      const raw2 = res2?.data?.message?.content || res2?.data?.response || '';
+      console.log('🧠 RAW LLM (strict):', raw2);
+      const parsed2 = safeParseJSONObject(raw2);
+      return parsed2 ?? null;
+    } catch (e) {
+      lastErr = e;
+      if (i < retries) continue;
+    }
+  }
+  throw lastErr || new Error('call ollama /api/chat failed');
+}
+
+/* =================== AI-first scoring helpers (uses Ollama) ===================== */
+async function getSmartEmotionEval(message) {
+  let emotion = null;
+  let risk = 'ปกติ';
+  let emotionScore = null;
+  let emotionScoreSource = 'local-fallback';
+  let emotionExplanation = 'ไม่สามารถวิเคราะห์ได้ หรือความเชื่อมั่นไม่เพียงพอ';
+
+  try {
+    const data = await callOllamaChatWithRetry(message, 1);
+
+    if (typeof data?.risk === 'string') risk = data.risk;
+    if (typeof data?.emotion === 'string' || data?.emotion === null) emotion = data.emotion;
+
+    const explain = pickEmotionExplanationFromAPI(data);
+    if (explain) emotionExplanation = explain;
+
+    const aiScoreRaw = pickEmotionScoreFromAPI(data);
+    if (aiScoreRaw !== undefined) {
+      const s = aiScoreRaw === null ? null : normalizeAIScore(aiScoreRaw);
+      if (s === null) {
+        emotionScore = emotionToScore(emotion);
+        emotionScoreSource = emotionScore == null ? 'ai-null' : 'mapped-from-label';
+      } else {
+        emotionScore = s;
+        emotionScoreSource = 'ai';
+      }
+    } else {
+      emotionScore = emotionToScore(emotion);
+      emotionScoreSource = emotionScore == null ? 'ai-missing' : 'mapped-from-label';
+    }
+  } catch (e) {
+    console.warn('getSmartEmotionEval fallback local:', e?.message || e);
+    emotionScore = emotionToScore(emotion);
+    emotionScoreSource = emotionScore == null ? 'error-null' : 'mapped-from-label';
+  }
+
+  return { emotion, risk, emotionScore, emotionScoreSource, emotionExplanation };
+}
+
+/* =================== High-risk keyword guard (local) ===================== */
 const HIGH_RISK_HINTS = ['อยากตาย', 'ฆ่าตัวตาย', 'ไม่อยากอยู่แล้ว', 'ไม่อยากอยู่บนโลกนี้', 'จบชีวิต', 'ทำร้ายตัวเอง', 'เจ็บตัวเอง', 'จากไปดีกว่า', 'ตายไปคงดี', 'ชีวิตไม่มีค่า', 'ไร้ค่าเกินไป', 'ไม่เหลือใคร', 'อยู่ไปก็เท่านั้น'];
 
 function hasHighRiskKeywords(text) {
@@ -95,7 +228,8 @@ function hasHighRiskKeywords(text) {
   const t = text.toLowerCase();
   return HIGH_RISK_HINTS.some((k) => t.includes(k.toLowerCase()));
 }
-/* =================== /High-risk keyword guard ===================== */
+
+/* ========================================================================= */
 
 export default function DiaryScreen() {
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
@@ -113,9 +247,32 @@ export default function DiaryScreen() {
 
   const [alertShown, setAlertShown] = useState(false);
 
-  function calcAverageScore(entriesObj) { if (!Object.values(entriesObj || {}).length) return null; /* ... */ return 2; }
-  function checkAndAlertAverage(entriesObj) { /* ... */ }
+  function calcAverageScore(entriesObj) {
+    const entries = Object.values(entriesObj || {});
+    if (!entries.length) return null;
+    const scores = entries.map((e) => { if (typeof e?.emotionScore === 'number') return normalizeAIScore(e.emotionScore); return emotionToScore(e?.emotion); }).filter((n) => Number.isFinite(n));
+    if (!scores.length) return null;
+    const sum = scores.reduce((a, b) => a + b, 0);
+    return sum / scores.length;
+  }
 
+  function checkAndAlertAverage(entriesObj) {
+    if (alertShown) return;
+    const avg = calcAverageScore(entriesObj);
+    if (avg == null) return;
+    if (avg <= 1) {
+      setAlertShown(true);
+      Alert.alert(
+        'คำแนะนำด้านสุขภาพ',
+        'คะแนนอารมณ์เฉลี่ยของคุณต่ำกว่า 1 แนะนำให้ปรึกษาผู้เชี่ยวชาญ/พบแพทย์เพื่อรับคำแนะนำเพิ่มเติม',
+        [
+          { text: 'พบแพทย์ของเรา', onPress: () => navigation.navigate('DoctorRecommend'), style: 'default' },
+          { text: 'OK', style: 'cancel' },
+        ],
+        { cancelable: true }
+      );
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -151,7 +308,7 @@ export default function DiaryScreen() {
     setCategories((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
   };
 
-const handleSave = async () => {
+  const handleSave = async () => {
     if (!user) {
       Alert.alert('ยังไม่ได้ล็อกอิน', 'กรุณาเข้าสู่ระบบก่อนบันทึกไดอารี่');
       return;
@@ -193,20 +350,16 @@ const handleSave = async () => {
       if (highRisk) {
         const recommendedSpecialties = getSpecialtiesFromCategories(categories);
 
-        // ✅ 1. สร้างข้อความแนะนำเบื้องต้น
         let recommendationMessage = 'ตรวจพบสัญญาณความเสี่ยงสูงจากข้อความของคุณ แนะนำให้ปรึกษาผู้เชี่ยวชาญหรือพบแพทย์ทันที หากอยู่ในภาวะฉุกเฉิน โปรดติดต่อบริการฉุกเฉินใกล้คุณ';
 
-        // ✅ 2. ตรวจสอบและสร้างข้อความแนะนำเพิ่มเติม
         if (recommendedSpecialties && recommendedSpecialties.length > 0) {
-          // แปลง Array ของความเชี่ยวชาญเป็น String ที่อ่านง่าย
           const specialtiesText = recommendedSpecialties.map(s => `• ${s.split(',')[0]}`).join('\n');
-          recommendationMessage += `\n\nขอแนะนำแพทย์เฉพาะทางด้าน:\n${specialtiesText}`;
+          recommendationMessage += `\n\nจากหมวดหมู่ที่คุณเลือก ขอแนะนำแพทย์เฉพาะทางด้าน:\n${specialtiesText}`;
         }
 
-        // ✅ 3. เรียก Alert โดยใช้ข้อความที่สร้างขึ้น และมีปุ่มหลักๆ เท่านั้น
         Alert.alert(
           '🚨 ความปลอดภัยมาก่อน',
-          recommendationMessage, // <-- ใช้ข้อความที่สร้างขึ้นแบบไดนามิก
+          recommendationMessage,
           [
             { text: 'โทรสายด่วนสุขภาพจิต 1323', onPress: () => Linking.openURL('tel:1323') },
             {
@@ -214,7 +367,6 @@ const handleSave = async () => {
               onPress: () => navigation.navigate('DoctorRecommend', {
                 from: 'Diary',
                 risk: 'high',
-                // ส่งค่าทั้งหมดไปเพื่อให้หน้าถัดไปกรองได้เหมือนเดิม
                 recommendedSpecialties: recommendedSpecialties,
               }),
             },
@@ -230,7 +382,7 @@ const handleSave = async () => {
       console.error('บันทึกผิดพลาด: ', error);
       Alert.alert('❌ เกิดข้อผิดพลาด', error.message);
     }
-  };;
+  };
 
   return (
     <View style={styles.container}>
@@ -263,7 +415,6 @@ const handleSave = async () => {
         <Text style={styles.buttonText}>คลังไดอารี่</Text>
       </TouchableOpacity>
 
-      {/* Modal เขียนบันทึก */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
