@@ -1,413 +1,360 @@
-// screens/DoctorDetailScreen.js
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
-  TextInput,
-  Alert,
-  Linking,
-} from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { db, auth } from '../firebase';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  orderBy,
-  query,
-  where,
-  serverTimestamp,
-} from 'firebase/firestore';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet, Modal, ScrollView, TextInput } from 'react-native';
+// documentId ไม่ได้ใช้แล้วในการ query แต่เก็บไว้เผื่ออนาคต
+import { getFirestore, collection, query, onSnapshot, doc, deleteDoc, setDoc, documentId } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { app } from "../firebase";
+import moment from 'moment';
+import 'moment/locale/th';
+import { Calendar } from 'react-native-calendars';
+import Icon from 'react-native-vector-icons/Ionicons';
 
-const radius = 16;
+moment.locale('th');
 
-export default function DoctorDetailScreen({ route }) {
-  const navigation = useNavigation();
-  const { doctor } = route.params;
+export default function DiaryLibraryScreen({ navigation }) {
+  const [entries, setEntries] = useState([]);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategories, setEditCategories] = useState([]);
+  
+  const [allCategories, setAllCategories] = useState([]);
+  const [selectedFilterCategories, setSelectedFilterCategories] = useState(new Set());
+  const [selectedFilterDate, setSelectedFilterDate] = useState(null);
+  const [isDatePickerVisible, setDatePickerVisible] = useState(false);
 
-  const [apptCount, setApptCount] = useState(0);
-
-  // รีวิว
-  const [reviews, setReviews] = useState([]);
-  const [avgRating, setAvgRating] = useState(0);
-  const [reviewCount, setReviewCount] = useState(0);
-  const [showMore, setShowMore] = useState(false);
-
-  // ฟอร์มรีวิว
-  const [pendingRating, setPendingRating] = useState(5);
-  const [pendingText, setPendingText] = useState('');
-
-  const doctorRoot = 'doctors';
-  const legacyRoot = 'psychiatrists';
-
-  const reviewPathCandidates = useMemo(
-    () => [
-      { root: doctorRoot, path: doc(db, doctorRoot, doctor.id) },
-      { root: legacyRoot, path: doc(db, legacyRoot, doctor.id) },
-    ],
-    [doctor?.id]
-  );
-
-  // โหลดจำนวนการนัด
-  const loadAppointmentCount = async () => {
-    try {
-      const qAppt = query(
-        collection(db, 'appointments'),
-        where('doctorId', '==', doctor.id)
-      );
-      const snap = await getDocs(qAppt);
-      setApptCount(snap.size || 0);
-    } catch (e) {
-      console.log('load appt count error:', e);
-    }
-  };
-
-  // โหลดรีวิว
-  const loadReviews = async () => {
-    try {
-      let list = [];
-      for (const cand of reviewPathCandidates) {
-        const ref = collection(cand.path, 'reviews');
-        const snap = await getDocs(query(ref, orderBy('createdAt', 'desc')));
-        if (!snap.empty) {
-          list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          break;
-        }
-      }
-      setReviewCount(list.length);
-      setReviews(list);
-      if (list.length) {
-        const sum = list.reduce((s, r) => s + (Number(r.rating) || 0), 0);
-        setAvgRating(Math.round((sum / list.length) * 10) / 10);
-      } else {
-        setAvgRating(0);
-      }
-    } catch (e) {
-      console.log('load reviews error:', e);
-    }
-  };
+  const db = getFirestore(app);
+  const auth = getAuth();
 
   useEffect(() => {
-    if (!doctor?.id) return;
-    loadAppointmentCount();
-    loadReviews();
-  }, [doctor?.id]);
-
-  const onSubmitReview = async () => {
-    if (!pendingRating || pendingRating < 1 || pendingRating > 5) {
-      Alert.alert('ให้คะแนน 1-5 ดาว');
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("❌ ยังไม่ได้ล็อกอิน");
       return;
     }
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert('กรุณาเข้าสู่ระบบก่อน');
-        return;
-      }
+    
+    // ✅ 1. แก้ไข Query: เอา orderBy ออกเพื่อไม่ให้เกิด Error
+    const q = query(
+      collection(db, "diaryEntries", user.uid, "entries")
+    );
 
-      // ชื่อผู้ใช้จาก users/{uid}.userID
-      let displayName = '';
-      try {
-        const userSnap = await getDoc(doc(db, 'users', user.uid));
-        if (userSnap.exists()) displayName = userSnap.data()?.userID || '';
-      } catch (e) {
-        console.log('fetch userID error:', e);
-      }
-      if (!displayName) displayName = user.email || 'ผู้ใช้';
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const data = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-      const target = reviewPathCandidates[0];
-      const reviewsRef = collection(target.path, 'reviews');
-      await addDoc(reviewsRef, {
-        rating: Number(pendingRating),
-        text: pendingText || '',
-        username: displayName,
-        userId: user.uid,
-        createdAt: serverTimestamp(),
+      // ✅ 2. แก้ไขโดยเพิ่ม: เรียงลำดับข้อมูลฝั่งแอป (Client-Side Sorting)
+      //    b.id.localeCompare(a.id) จะเรียงวันที่ (YYYY-MM-DD) จากล่าสุดไปเก่าสุด
+      data.sort((a, b) => b.id.localeCompare(a.id));
+
+      setEntries(data); // set state ด้วยข้อมูลที่เรียงลำดับแล้ว
+
+      const categoriesSet = new Set();
+      data.forEach(entry => {
+        entry.categories?.forEach(cat => categoriesSet.add(cat));
       });
+      setAllCategories(Array.from(categoriesSet).sort());
 
-      setPendingRating(5);
-      setPendingText('');
-      Alert.alert('ขอบคุณสำหรับรีวิว!');
-      loadReviews();
-    } catch (e) {
-      console.log('add review error:', e);
-      Alert.alert('ไม่สามารถส่งรีวิวได้');
+    }, (error) => {
+      console.error("โหลดข้อมูลผิดพลาด:", error);
+      Alert.alert("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+    });
+
+    return () => unsubscribe();
+  }, []);
+  
+  const filteredEntries = useMemo(() => {
+    if (selectedFilterCategories.size === 0 && !selectedFilterDate) {
+      return entries;
+    }
+
+    return entries.filter(entry => {
+      const dateMatch = !selectedFilterDate || entry.id === selectedFilterDate;
+      const categoryMatch = selectedFilterCategories.size === 0 || 
+        (entry.categories && Array.from(selectedFilterCategories).some(filterCat => entry.categories.includes(filterCat)));
+      return dateMatch && categoryMatch;
+    });
+  }, [entries, selectedFilterCategories, selectedFilterDate]);
+
+  const toggleFilterCategory = (category) => {
+    const newSet = new Set(selectedFilterCategories);
+    if (newSet.has(category)) {
+      newSet.delete(category);
+    } else {
+      newSet.add(category);
+    }
+    setSelectedFilterCategories(newSet);
+  };
+
+  const clearFilters = () => {
+    setSelectedFilterCategories(new Set());
+    setSelectedFilterDate(null);
+  };
+
+  const forbiddenWords = ['ฆ่า', 'ตาย', 'เศร้า', 'เสียใจ', 'อยากตาย'];
+
+  const onEntryPress = (entry) => {
+    const cleanedText = (entry.content || "").toLowerCase().replace(/[^\w\sก-๙]/gi, '');
+    const found = forbiddenWords.find(word =>
+      cleanedText.includes(word.toLowerCase())
+    );
+
+    if (found) {
+      Alert.alert(
+        'คำเตือน 🚫',
+        `พบคำต้องห้าม "${found}" ในไดอารี่นี้\nโปรดตรวจสอบเนื้อหาอีกครั้ง`,
+        [{ text: 'ปิด' }]
+      );
+    } else {
+      setSelectedEntry(entry);
+      setModalVisible(true);
+      setIsEditing(false);
     }
   };
 
-  const educationList = useMemo(() => {
-    const edu = doctor?.education;
-    if (!edu) return [];
-    if (Array.isArray(edu)) return edu.filter(Boolean);
-    return [String(edu)].filter(Boolean);
-  }, [doctor?.education]);
+  const handleDelete = async () => {
+    if (!selectedEntry) return;
+    const user = auth.currentUser;
+    if (!user) return;
 
-  const Star = ({ active, onPress, size = 22 }) => (
-    <TouchableOpacity onPress={onPress} style={{ paddingHorizontal: 2 }}>
-      <Text style={{ fontSize: size }}>{active ? '★' : '☆'}</Text>
-    </TouchableOpacity>
-  );
+    Alert.alert(
+      'ลบไดอารี่',
+      'คุณแน่ใจไหมว่าต้องการลบไดอารี่นี้?',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ลบ',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "diaryEntries", user.uid, "entries", selectedEntry.id));
+              setModalVisible(false);
+              setSelectedEntry(null);
+            } catch (error)              {
+              console.error("ลบผิดพลาด:", error);
+              Alert.alert("เกิดข้อผิดพลาดในการลบ");
+            }
+          }
+        }
+      ]
+    );
+  };
 
-  const RatingBar = ({ value, onChange }) => (
-    <View style={{ flexDirection: 'row', marginTop: 6 }}>
-      {[1, 2, 3, 4, 5].map(i => (
-        <Star key={i} active={i <= value} onPress={() => onChange?.(i)} size={26} />
-      ))}
-    </View>
-  );
+  const renderItem = ({ item }) => {
+    const preview = item.content?.length > 50 ? item.content.substring(0, 50) + '...' : item.content || '';
+    const categoriesText = item.categories?.join(', ') || '';
+    const entryDateText = moment(item.id).isValid() ? moment(item.id).format('D MMMM YYYY') : item.id;
 
-  const displayReviews = showMore ? reviews : reviews.slice(0, 3);
+    return (
+      <TouchableOpacity 
+        style={styles.entryCard} 
+        onPress={() => onEntryPress(item)}
+      >
+        <Text style={styles.entryTitle}>{item.title}</Text>
+        <Text style={styles.entryCategory}>🏷️ {categoriesText}</Text>
+        <Text style={styles.entryPreview}>📓 {preview}</Text>
+        <View style={styles.entryFooter}>
+          <Text style={styles.entryDate}>{entryDateText}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <View style={styles.screen}>
-      {/* Header */}
-      <View style={styles.headerCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{doctor?.name?.[0] ?? 'ด'}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{doctor.name}</Text>
-          <View style={styles.chipsRow}>
-            {!!doctor.specialty && (
-              <View style={styles.chip}>
-                <Ionicons name="medkit-outline" size={14} color="#2563eb" />
-                <Text style={styles.chipText}>{doctor.specialty}</Text>
-              </View>
-            )}
-            <View style={[styles.chip, { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }]}>
-              <Ionicons name="star" size={14} color="#f59e0b" />
-              <Text style={[styles.chipText, { color: '#b45309' }]}>
-                {avgRating > 0 ? `${avgRating} ★ • ${reviewCount} รีวิว` : 'ยังไม่มีรีวิว'}
-              </Text>
-            </View>
-            {!!doctor.contact && (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>📔 คลังไดอารี่</Text>
+      </View>
+      
+      <View style={styles.filterContainer}>
+        <Text style={styles.filterTitle}>ตัวกรอง</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
+          {allCategories.map(cat => {
+            const isSelected = selectedFilterCategories.has(cat);
+            return (
               <TouchableOpacity
-                style={[styles.chip, { backgroundColor: '#eef2ff', borderColor: '#e0e7ff' }]}
-                onPress={() => Linking.openURL(`tel:${doctor.contact}`)}
+                key={cat}
+                style={[styles.categoryChip, isSelected && styles.categoryChipSelected]}
+                onPress={() => toggleFilterCategory(cat)}
               >
-                <Ionicons name="call-outline" size={14} color="#4f46e5" />
-                <Text style={[styles.chipText, { color: '#4f46e5' }]}>{doctor.contact}</Text>
+                <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextSelected]}>{cat}</Text>
+              </TouchableOpacity>
+            )
+          })}
+        </ScrollView>
+        <View style={styles.filterActions}>
+          <TouchableOpacity style={styles.dateButton} onPress={() => setDatePickerVisible(true)}>
+            <Icon name="calendar-outline" size={16} color="#FF6B81" />
+            <Text style={styles.dateButtonText}>
+              {selectedFilterDate ? moment(selectedFilterDate).format('D MMM YY') : 'เลือกวันที่'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.clearButton} onPress={clearFilters}>
+             <Icon name="refresh-outline" size={16} color="#555" />
+            <Text style={styles.clearButtonText}>ล้างตัวกรอง</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {filteredEntries.length === 0 ? (
+        <Text style={{ textAlign: 'center', marginTop: 20, fontSize: 16 }}>ไม่พบบันทึกตามเงื่อนไข</Text>
+      ) : (
+        <FlatList
+          data={filteredEntries}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingBottom: 20 }}
+        />
+      )}
+
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Text style={styles.backButtonText}>กลับ</Text>
+      </TouchableOpacity>
+      
+       <Modal
+        visible={isDatePickerVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setDatePickerVisible(false)}
+      >
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setDatePickerVisible(false)}>
+          <View style={styles.calendarModalContent}>
+            <Calendar
+              onDayPress={(day) => {
+                setSelectedFilterDate(day.dateString);
+                setDatePickerVisible(false);
+              }}
+              markedDates={{
+                [selectedFilterDate]: { selected: true, selectedColor: '#FF6B81' }
+              }}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setModalVisible(false);
+          setIsEditing(false);
+        }}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            {!isEditing && (
+              <TouchableOpacity
+                style={{ position: 'absolute', top: 15, right: 15, zIndex: 10, padding: 5 }}
+                onPress={() => {
+                  setIsEditing(true);
+                  setEditTitle(selectedEntry?.title || '');
+                  setEditCategories(selectedEntry?.categories || []);
+                  setEditContent(selectedEntry?.content || '');
+                }}
+              >
+                  <Icon name="create-outline" size={24} color="#FF6B81"/>
               </TouchableOpacity>
             )}
+
+            <ScrollView>
+              {isEditing ? (
+                <>
+                  <TextInput style={[styles.modalTitle, { fontSize: 20, borderWidth: 1, borderColor: '#ddd', padding: 10, borderRadius: 8 }]} value={editTitle} onChangeText={setEditTitle} placeholder="หัวข้อ" />
+                  <TextInput style={[styles.modalCategory, { fontSize: 14, borderWidth: 1, borderColor: '#ddd', padding: 10, borderRadius: 8, marginTop: 10 }]} value={editCategories.join(', ')} onChangeText={text => setEditCategories(text.split(',').map(c => c.trim()))} placeholder="หมวดหมู่คั่นด้วย ," />
+                  <TextInput style={[styles.modalText, { minHeight: 200, borderWidth: 1, borderColor: '#ddd', padding: 10, borderRadius: 8, marginTop: 10 }]} value={editContent} onChangeText={setEditContent} multiline textAlignVertical="top" />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.modalTitle}>{selectedEntry?.title}</Text>
+                  <Text style={styles.modalCategory}>{selectedEntry?.categories?.join(', ')}</Text>
+                  <Text style={styles.modalDate}>
+                    {selectedEntry?.id ? moment(selectedEntry.id).format('D MMMM YYYY') : ''}
+                  </Text>
+                  <Text style={styles.modalSubDate}>
+                    บันทึกเมื่อ: {selectedEntry?.createdAt ? moment(selectedEntry.createdAt).format('D MMM YY, HH:mm น.') : '-'}
+                  </Text>
+                  <Text style={styles.modalText}>{selectedEntry?.content}</Text>
+                </>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              {isEditing ? (
+                <>
+                  <TouchableOpacity style={[styles.closeButton, { backgroundColor: '#aaa', marginRight: 10 }]} onPress={() => setIsEditing(false)}>
+                    <Text style={styles.closeButtonText}>ยกเลิก</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.closeButton} onPress={async () => {
+                      try {
+                        const user = auth.currentUser;
+                        if (!user) return;
+                        await setDoc(doc(db, "diaryEntries", user.uid, "entries", selectedEntry.id), { ...selectedEntry, title: editTitle, categories: editCategories, content: editContent, });
+                        setSelectedEntry({ ...selectedEntry, title: editTitle, categories: editCategories, content: editContent });
+                        setIsEditing(false);
+                        Alert.alert("✅ บันทึกสำเร็จ");
+                      } catch (error) {
+                        console.error("แก้ไขผิดพลาด:", error);
+                        Alert.alert("เกิดข้อผิดพลาดในการบันทึก");
+                      }
+                    }} >
+                    <Text style={styles.closeButtonText}>บันทึก</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
+                    <TouchableOpacity style={[styles.closeButton, {flex: 1, marginRight: 5, backgroundColor: '#dc3545'}]} onPress={handleDelete}>
+                        <Text style={styles.closeButtonText}>ลบ</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.closeButton, {flex: 1, marginLeft: 5}]} onPress={() => setModalVisible(false)}>
+                        <Text style={styles.closeButtonText}>ปิด</Text>
+                    </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
         </View>
-      </View>
-
-      {/* KPIs */}
-      <View style={styles.kpiRow}>
-        <View style={styles.kpiCard}>
-          <Text style={styles.kpiNumber}>{apptCount}</Text>
-          <Text style={styles.kpiLabel}>ครั้งที่มีการนัดหมาย</Text>
-        </View>
-        <View style={styles.kpiCard}>
-          <Text style={styles.kpiNumber}>{avgRating > 0 ? `${avgRating} ★` : '-'}</Text>
-          <Text style={styles.kpiLabel}>คะแนนเฉลี่ย</Text>
-        </View>
-      </View>
-
-      {/* Education */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>ประวัติการศึกษา</Text>
-        {educationList.length === 0 ? (
-          <Text style={styles.muted}>–</Text>
-        ) : (
-          educationList.map((line, idx) => (
-            <Text key={idx} style={styles.eduLine}>• {line}</Text>
-          ))
-        )}
-      </View>
-
-      {/* ปุ่มนัดหมาย */}
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={() => navigation.navigate('BookAppointment', { doctor })}
-        activeOpacity={0.9}
-      >
-        <Ionicons name="calendar-outline" size={18} color="#fff" />
-        <Text style={styles.primaryBtnText}>นัดหมายออนไลน์</Text>
-      </TouchableOpacity>
-
-      {/* ฟอร์มรีวิว */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>ให้คะแนนและรีวิว</Text>
-        <RatingBar value={pendingRating} onChange={setPendingRating} />
-        <TextInput
-          style={styles.input}
-          placeholder="เขียนความเห็นของคุณ (ไม่บังคับ)"
-          value={pendingText}
-          onChangeText={setPendingText}
-          multiline
-        />
-        <TouchableOpacity style={styles.darkBtn} onPress={onSubmitReview}>
-          <Text style={styles.darkBtnText}>ส่งรีวิว</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* รีวิวล่าสุด */}
-      <Text style={[styles.sectionTitle, { marginTop: 8, marginBottom: 8 }]}>
-        รีวิวล่าสุด
-      </Text>
-
-      {reviews.length === 0 ? (
-        <Text style={styles.muted}>ยังไม่มีรีวิว</Text>
-      ) : (
-        <>
-          <FlatList
-            data={displayReviews}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.reviewCard}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={styles.reviewName}>
-                    {item.username || item.userName || item.userEmail || 'ผู้ใช้'}
-                  </Text>
-                  <Text style={styles.reviewStars}>
-                    {'★'.repeat(item.rating || 0)}
-                    {'☆'.repeat(Math.max(0, 5 - (item.rating || 0)))}
-                  </Text>
-                </View>
-                {!!item.text && <Text style={styles.reviewText}>{item.text}</Text>}
-                {item.createdAt?.toDate && (
-                  <Text style={styles.reviewDate}>
-                    {item.createdAt.toDate().toLocaleString()}
-                  </Text>
-                )}
-              </View>
-            )}
-          />
-          {reviews.length > 3 && (
-            <TouchableOpacity
-              style={styles.moreBtn}
-              onPress={() => setShowMore(!showMore)}
-              activeOpacity={0.9}
-            >
-              <Ionicons name={showMore ? 'chevron-up' : 'chevron-down'} size={18} color="#2563eb" />
-              <Text style={styles.moreText}>{showMore ? 'ย่อรีวิว' : 'ดูเพิ่มเติม'}</Text>
-            </TouchableOpacity>
-          )}
-        </>
-      )}
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff', padding: 16 },
-
-  headerCard: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-    padding: 14,
-    borderRadius: radius,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#e0e7ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontSize: 20, fontWeight: '800', color: '#4338ca' },
-  name: { fontSize: 20, fontWeight: '800', color: '#111827' },
-  chipsRow: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  chipText: { fontSize: 12, fontWeight: '600' },
-
-  kpiRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  kpiCard: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: radius,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  kpiNumber: { fontSize: 18, fontWeight: '800', color: '#1f2937' },
-  kpiLabel: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-
-  sectionCard: {
-    padding: 14,
-    borderRadius: radius,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    marginBottom: 12,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
-  muted: { color: '#9ca3af', marginTop: 4 },
-  eduLine: { fontSize: 14, color: '#374151' },
-
-  primaryBtn: {
-    flexDirection: 'row',
-    gap: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ef4444',
-    paddingVertical: 14,
-    borderRadius: radius,
-    marginBottom: 12,
-  },
-  primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-
-  input: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: radius,
-    padding: 12,
-    minHeight: 60,
-    marginTop: 8,
-    textAlignVertical: 'top',
-  },
-  darkBtn: {
-    backgroundColor: '#111827',
-    borderRadius: radius,
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 10,
-  },
-  darkBtnText: { color: '#fff', fontWeight: '800' },
-
-  reviewCard: {
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    borderRadius: radius,
-    padding: 12,
-    marginBottom: 10,
-  },
-  reviewName: { fontWeight: '800', color: '#111827' },
-  reviewStars: { color: '#f59e0b', fontWeight: '800' },
-  reviewText: { marginTop: 6, color: '#374151' },
-  reviewDate: { marginTop: 4, fontSize: 12, color: '#9ca3af' },
-
-  moreBtn: {
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    padding: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
-    backgroundColor: '#eff6ff',
-  },
-  moreText: { color: '#2563eb', fontWeight: '800' },
+  container: { flex: 1, backgroundColor: '#FFF8F0' },
+  header: { backgroundColor: '#FFD6E0', paddingVertical: 20, alignItems: 'center', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, elevation: 2 },
+  headerTitle: { fontSize: 28, fontWeight: '700', color: '#FF6B81' },
+  filterContainer: { paddingVertical: 10, backgroundColor: '#fff', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  filterTitle: { fontSize: 16, fontWeight: '600', color: '#333', marginLeft: 15, marginBottom: 8 },
+  categoryChip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, backgroundColor: '#f1f1f1', marginRight: 8, borderWidth: 1, borderColor: '#ddd' },
+  categoryChipSelected: { backgroundColor: '#FF6B81', borderColor: '#FF6B81' },
+  categoryChipText: { fontSize: 14, color: '#333' },
+  categoryChipTextSelected: { color: '#fff', fontWeight: '600' },
+  filterActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, marginTop: 10 },
+  dateButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#FFF4F6', borderRadius: 10, borderWidth: 1, borderColor: '#FFD6E0' },
+  dateButtonText: { color: '#FF6B81', fontWeight: '600', marginLeft: 6 },
+  clearButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12 },
+  clearButtonText: { color: '#555', fontWeight: '600', marginLeft: 6 },
+  entryCard: { backgroundColor: '#FFF', borderRadius: 15, padding: 15, marginHorizontal: 15, marginVertical: 8, shadowColor: "#000", shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4, elevation: 4 },
+  entryTitle: { fontSize: 18, fontWeight: '700', marginBottom: 6, color: '#FF6B81' },
+  entryCategory: { fontSize: 14, fontWeight: '500', color: '#555', marginBottom: 6 },
+  entryPreview: { fontSize: 14, color: '#333', marginBottom: 8 },
+  entryFooter: { flexDirection: 'row', justifyContent: 'flex-end' },
+  entryDate: { fontSize: 12, color: '#999' },
+  backButton: { backgroundColor: '#FF6B6B', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginHorizontal: 15, marginTop: 10, marginBottom: 15, elevation: 3 },
+  backButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, maxHeight: '80%', elevation: 5 },
+  modalTitle: { fontSize: 22, fontWeight: '700', marginBottom: 10, color: '#FF6B81', textAlign: 'center' },
+  modalCategory: { fontSize: 16, fontWeight: '600', color: '#555', marginBottom: 6, textAlign: 'center' },
+  modalDate: { fontSize: 14, color: '#555', marginBottom: 2, textAlign: 'center', fontWeight: '600'},
+  modalSubDate: { fontSize: 12, color: '#999', marginBottom: 12, textAlign: 'center' },
+  modalText: { fontSize: 16, lineHeight: 24, color: '#333' },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+  closeButton: { backgroundColor: '#FF6B6B', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 12, alignItems: 'center' },
+  closeButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  calendarModalContent: { backgroundColor: 'white', borderRadius: 10, padding: 10, width: '100%' },
 });
