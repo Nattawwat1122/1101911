@@ -232,7 +232,8 @@ function hasHighRiskKeywords(text) {
 /* ========================================================================= */
 
 export default function DiaryScreen() {
-  const [selectedDate, setSelectedDate] = useState(getTodayDate());
+  const today = getTodayDate(); // --- [เพิ่ม] เก็บวันที่ปัจจุบันไว้ในตัวแปร ---
+  const [selectedDate, setSelectedDate] = useState(today); // --- [แก้ไข] ให้วันเริ่มต้นเป็นวันปัจจุบันเสมอ ---
   const [diaryEntries, setDiaryEntries] = useState({});
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -333,11 +334,12 @@ export default function DiaryScreen() {
         createdAt: new Date().toISOString(),
         analyzedAt: new Date().toISOString(),
       };
-
-      await setDoc(doc(db, 'diaryEntries', user.uid, 'entries', selectedDate), payload);
+      
+      // --- [แก้ไข] บันทึกข้อมูลสำหรับวันที่ปัจจุบัน (today) เสมอ ---
+      await setDoc(doc(db, 'diaryEntries', user.uid, 'entries', today), payload);
 
       setDiaryEntries((prev) => {
-        const updated = { ...prev, [selectedDate]: payload };
+        const updated = { ...prev, [today]: payload };
         checkAndAlertAverage(updated);
         return updated;
       });
@@ -376,17 +378,22 @@ export default function DiaryScreen() {
         );
 
       } else {
-        Alert.alert('✅ บันทึกสำเร็จ', `บันทึกสำหรับวันที่ ${selectedDate} แล้ว`);
+        Alert.alert('✅ บันทึกสำเร็จ', `บันทึกสำหรับวันที่ ${today} แล้ว`);
       }
     } catch (error) {
       console.error('บันทึกผิดพลาด: ', error);
       Alert.alert('❌ เกิดข้อผิดพลาด', error.message);
     }
   };
+  
+  // --- [เพิ่ม] ตัวแปรเช็คว่ามีบันทึกของวันนี้หรือยัง ---
+  const entryExistsForToday = diaryEntries[today];
 
   return (
     <View style={styles.container}>
       <Calendar
+        // --- [เพิ่ม] ล็อคไม่ให้เลือกวันในอนาคต ---
+        maxDate={today}
         onDayPress={onDayPress}
         markedDates={{
           ...Object.keys(diaryEntries).reduce(
@@ -401,10 +408,29 @@ export default function DiaryScreen() {
       />
 
       <Text style={styles.label}>บันทึกของวันที่ {selectedDate}</Text>
-
-      <TouchableOpacity style={styles.writeButton} onPress={() => setModalVisible(true)}>
+      
+      {/* --- [แก้ไข] ปรับปรุงปุ่มเขียน/แก้ไข ให้ทำงานเฉพาะกับวันปัจจุบัน --- */}
+      <TouchableOpacity 
+        style={styles.writeButton} 
+        onPress={() => {
+            // ถ้ามีข้อมูลของวันนี้อยู่แล้ว ให้โหลดขึ้นมาเพื่อแก้ไข
+            if (entryExistsForToday) {
+                setTitle(entryExistsForToday.title);
+                setCategories(entryExistsForToday.categories || []);
+                setContent(entryExistsForToday.content);
+            } else {
+            // ถ้ายังไม่มี ให้เคลียร์ค่าทั้งหมดสำหรับบันทึกใหม่
+                setTitle('');
+                setCategories([]);
+                setContent('');
+            }
+            setModalVisible(true);
+        }}
+      >
         <Icon name="create-outline" size={22} color="#fff" style={{ marginRight: 8 }} />
-        <Text style={styles.buttonText}>เขียนบันทึก</Text>
+        <Text style={styles.buttonText}>
+            {entryExistsForToday ? 'แก้ไขบันทึก' : 'เขียนบันทึก'}
+        </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -418,7 +444,7 @@ export default function DiaryScreen() {
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>✏️ เขียนบันทึก</Text>
+            <Text style={styles.modalTitle}>✏️ {entryExistsForToday ? 'แก้ไขบันทึก' : 'เขียนบันทึก'}</Text>
 
             <TextInput placeholder="หัวข้อ" value={title} onChangeText={setTitle} style={styles.input} />
 
