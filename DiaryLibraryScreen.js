@@ -239,16 +239,16 @@ export default function DiaryLibraryScreen({ navigation }) {
         visible={modalVisible}
         animationType="slide"
         transparent={true}
-        // --- [ปรับปรุง] ทำให้ onRequestClose ง่ายขึ้น ---
+        
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             
-            {/* --- [ลบ] ปุ่ม Edit Icon ออกไป --- */}
+          
 
             <ScrollView>
-                {/* --- [ปรับปรุง] แสดงข้อมูลอย่างเดียว ไม่ต้องมีเงื่อนไข isEditing --- */}
+               
                 <>
                   <Text style={styles.modalTitle}>{selectedEntry?.title}</Text>
                   <Text style={styles.modalCategory}>{selectedEntry?.categories?.join(', ')}</Text>
@@ -316,3 +316,4 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   calendarModalContent: { backgroundColor: 'white', borderRadius: 10, padding: 10, width: '100%' },
 });
+
