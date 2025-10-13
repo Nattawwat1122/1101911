@@ -5,10 +5,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
+  // FlatList, // --- [ลบ] ไม่ได้ใช้ FlatList แล้ว
   TextInput,
   Alert,
   Linking,
+  ScrollView, // --- [เพิ่ม] นำเข้า ScrollView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from '../firebase';
@@ -111,7 +112,6 @@ export default function DoctorDetailScreen({ route }) {
         return;
       }
 
-      // ชื่อผู้ใช้จาก users/{uid}.userID
       let displayName = '';
       try {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
@@ -164,8 +164,9 @@ export default function DoctorDetailScreen({ route }) {
 
   const displayReviews = showMore ? reviews : reviews.slice(0, 3);
 
+  // --- [แก้ไข] เปลี่ยน View หลักเป็น ScrollView ---
   return (
-    <View style={styles.screen}>
+    <ScrollView style={styles.screen}>
       {/* Header */}
       <View style={styles.headerCard}>
         <View style={styles.avatar}>
@@ -258,29 +259,27 @@ export default function DoctorDetailScreen({ route }) {
         <Text style={styles.muted}>ยังไม่มีรีวิว</Text>
       ) : (
         <>
-          <FlatList
-            data={displayReviews}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.reviewCard}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={styles.reviewName}>
-                    {item.username || item.userName || item.userEmail || 'ผู้ใช้'}
-                  </Text>
-                  <Text style={styles.reviewStars}>
-                    {'★'.repeat(item.rating || 0)}
-                    {'☆'.repeat(Math.max(0, 5 - (item.rating || 0)))}
-                  </Text>
-                </View>
-                {!!item.text && <Text style={styles.reviewText}>{item.text}</Text>}
-                {item.createdAt?.toDate && (
-                  <Text style={styles.reviewDate}>
-                    {item.createdAt.toDate().toLocaleString()}
-                  </Text>
-                )}
+          {/* --- [แก้ไข] เปลี่ยนจาก FlatList มาใช้ map --- */}
+          {displayReviews.map((item) => (
+            <View key={item.id} style={styles.reviewCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={styles.reviewName}>
+                  {item.username || item.userName || item.userEmail || 'ผู้ใช้'}
+                </Text>
+                <Text style={styles.reviewStars}>
+                  {'★'.repeat(item.rating || 0)}
+                  {'☆'.repeat(Math.max(0, 5 - (item.rating || 0)))}
+                </Text>
               </View>
-            )}
-          />
+              {!!item.text && <Text style={styles.reviewText}>{item.text}</Text>}
+              {item.createdAt?.toDate && (
+                <Text style={styles.reviewDate}>
+                  {item.createdAt.toDate().toLocaleString()}
+                </Text>
+              )}
+            </View>
+          ))}
+          
           {reviews.length > 3 && (
             <TouchableOpacity
               style={styles.moreBtn}
@@ -293,9 +292,10 @@ export default function DoctorDetailScreen({ route }) {
           )}
         </>
       )}
-    </View>
+    </ScrollView>
   );
 }
+
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff', padding: 16 },
@@ -408,6 +408,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#dbeafe',
     backgroundColor: '#eff6ff',
+    marginBottom: 20, // เพิ่มระยะห่างด้านล่างเล็กน้อย
   },
   moreText: { color: '#2563eb', fontWeight: '800' },
 });
