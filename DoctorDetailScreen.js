@@ -5,11 +5,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  // FlatList, // --- [ลบ] ไม่ได้ใช้ FlatList แล้ว
+
   TextInput,
   Alert,
   Linking,
-  ScrollView, // --- [เพิ่ม] นำเข้า ScrollView
+  ScrollView, 
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { db, auth } from '../firebase';
@@ -412,3 +412,4 @@ const styles = StyleSheet.create({
   },
   moreText: { color: '#2563eb', fontWeight: '800' },
 });
+
